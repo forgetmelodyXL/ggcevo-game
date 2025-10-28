@@ -8,76 +8,48 @@ import { PKProtection } from './database'
 
 // 带保底的抽奖方法
 export async function gachaWithPity(ctx: Context, handle: string): Promise<boolean> {
-  const [record] = await ctx.database.get('ggcevo_records', { handle: handle })
+  const [record] = await ctx.database.get('ggcevo_sign', { handle: handle })
   const currentPity = record?.pityCounter ?? 0
 
   // 保底触发判断
   if (currentPity >= 89) {
     await updatePityCounter(ctx, handle, true)
-    await ctx.database.upsert('ggcevo_records', [{
+    await ctx.database.upsert('ggcevo_sign', [{
       handle,
-      fullPityCount: (record?.fullPityCount || 0) + 1
+      fullPityCount: (record?.fullPityCount || 0) + 1,
+      bigPrizeCount: (record?.bigPrizeCount || 0) + 1  // 新增：保底触发时增加大奖计数
     }], ['handle'])
     return true
   }
 
   // 正常抽奖
   const isWin = simpleDraw()
-  await updatePityCounter(ctx, handle, isWin)
-  return isWin
-}
-
-export async function gachaWithHiddenAward(ctx: Context, handle: string): Promise<boolean> {
-  // 获取两个 item 的记录（2,3）
-  const backpackItems = await ctx.database.get('ggcevo_backpack', {
-    handle,
-    itemId: { $in: [2, 3] }
-  });
-
-  // 转换为 Map 方便查找
-  const itemMap = new Map(backpackItems.map(item => [item.itemId, item]));
-
-  const isWin = HiddenAward();
   if (isWin) {
-    // 构建需要更新的两个条目
-    const updates = [
-      {
-        itemId: 2,
-        addAmount: 1
-      },
-      {
-        itemId: 3,
-        addAmount: 1
-      }
-    ].map(({ itemId, addAmount }) => ({
+    await updatePityCounter(ctx, handle, true)
+    // 新增：抽中时增加大奖计数
+    await ctx.database.upsert('ggcevo_sign', [{
       handle,
-      itemId,
-      quantity: (itemMap.get(itemId)?.quantity || 0) + addAmount
-    }));
-
-    // 批量更新两个 item
-    await ctx.database.upsert('ggcevo_backpack', updates, ['handle', 'itemId']);
-
-    // 更新记录（保持不变）
-    const [record] = await ctx.database.get('ggcevo_records', { handle });
-    await ctx.database.upsert('ggcevo_records', [{
-      handle,
-      hiddenawards: (record?.hiddenawards || 0) + 1
-    }], ['handle']);
+      bigPrizeCount: (record?.bigPrizeCount || 0) + 1
+    }], ['handle'])
+  } else {
+    await updatePityCounter(ctx, handle, false)
   }
-  return isWin;
+  return isWin
 }
 
 // 更新保底计数器
 async function updatePityCounter(ctx: Context, handle: string, isWin: boolean) {
-  const [record] = await ctx.database.get('ggcevo_records', { handle: handle })
+  const [record] = await ctx.database.get('ggcevo_sign', { handle: handle })
   const [backpack] = await ctx.database.get('ggcevo_backpack', { handle: handle, itemId: 2 })
-  await ctx.database.upsert('ggcevo_records', [{
+
+  // 更新基础计数器
+  await ctx.database.upsert('ggcevo_sign', [{
     handle,
     totalPulls: (record?.totalPulls || 0) + 1,
     pityCounter: isWin ? 0 : (record?.pityCounter || 0) + 1
   }], ['handle'])
 
+  // 抽中时更新背包
   if (isWin) {
     await ctx.database.upsert('ggcevo_backpack', [{
       handle,
@@ -85,19 +57,12 @@ async function updatePityCounter(ctx: Context, handle: string, isWin: boolean) {
       quantity: (backpack?.quantity || 0) + 1
     }])
   }
-
 }
 
 export async function checkSensitiveWord(ctx: Context, content: string): Promise<boolean> {
-  try {
-    const response = await ctx.http.get(`https://v.api.aa1.cn/api/api-mgc/index.php?msg=${encodeURIComponent(content)}`);
 
-    return response.num === '1';
-  } catch (error) {
-    //console.error('敏感词查询失败:', error);
-    // 在错误情况下，默认返回false
-    return true;
-  }
+  return true;
+
 }
 
 function simpleDraw() {

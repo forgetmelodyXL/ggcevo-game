@@ -2,7 +2,6 @@ declare module 'koishi' {
   interface Tables {
     ggcevo_backpack: Backpack
     ggcevo_sign: SignRecord
-    ggcevo_records: GachaRecord
     ggcevo_welfare: WelfareClaim
     ggcevo_activity: ActivityInfo
     ggcevo_rank: RankRecord
@@ -43,14 +42,10 @@ export interface SignRecord {
   lastSign: Date
   monthlyDays: number
   totalRewards: number
-}
-
-export interface GachaRecord {
-  handle: string
   totalPulls: number
   pityCounter: number
   fullPityCount: number
-  hiddenawards: number
+  bigPrizeCount: number
 }
 
 export interface WelfareClaim {
