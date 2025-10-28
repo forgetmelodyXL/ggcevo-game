@@ -19,7 +19,7 @@
   "peerDependencies": {
     "@koishijs/plugin-proxy-agent": "^0.3.3",
     "koishi": "^4.18.7",
-    "koishi-plugin-sc2arcade-search": "^1.2.2"
+    "koishi-plugin-sc2arcade-search": "^1.2.3"
   },
   "koishi": {
     "service": {
