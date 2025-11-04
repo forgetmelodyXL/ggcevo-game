@@ -153,13 +153,13 @@ export function apply(ctx: Context, config: Config) {
 
   ctx.model.extend('ggcevo_punishment', {
     id: 'unsigned',          // 自增序号
-    name: 'string',          // 使用字符串存储名字
     handle: 'string',        // 平台用户句柄/ID
+    qq: 'string',            // 关联QQ号
     level: 'string',         // 处罚等级
     reason: 'text',          // 长文本存储处罚原因
-    count: 'string',       // 处罚次数
+    count: 'unsigned',       // 处罚次数
     reviewer: 'string',      // 审核人名称
-    date: 'string',       // 处罚时间
+    date: 'timestamp',       // 处罚时间
     comment: 'text',         // 备注信息（可选）
   }, {
     primary: 'id',
@@ -1942,12 +1942,13 @@ export function apply(ctx: Context, config: Config) {
       const recordText = records.map(item => {
         const baseInfo = [
           `ID: ${item.id}`,
-          `名字: ${item.name}`,
           `句柄: ${item.handle}`,
+          `QQ: ${item.qq}`,
           `处罚等级: ${item.level}`,
           `处罚原因: ${item.reason}`,
           `处罚次数: ${item.count}`,
-          `审核人: ${item.reviewer}`
+          `审核人: ${item.reviewer}`,
+          `处罚时间: ${item.date.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`,
         ];
         let finalText = baseInfo.join('\n');
         //if (item.comment) finalText += `\n备注: ${item.comment}`;

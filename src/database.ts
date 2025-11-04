@@ -78,13 +78,13 @@ export interface RankRecord {
 
 export interface PunishmentRecord {
   id: number
-  name: string
   handle: string
+  qq: string
   level: string
   reason: string
-  count: string
+  count: number
   reviewer: string
-  date: string
+  date: Date
   comment?: string
 }
 
