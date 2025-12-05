@@ -1318,7 +1318,7 @@ export function apply(ctx: Context, config: Config) {
 
         // 同年同月已领取
         if (lastYear === currentYear && lastMonth === currentMonth) {
-          return `您的本月管理津贴已领取，${currentMonth + 2}月1日后可再次领取。`;
+          return `您的本月管理津贴已领取，请在次月1日后可再次领取。`;
         }
       }
 
