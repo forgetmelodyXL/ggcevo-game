@@ -38,6 +38,7 @@ export interface Config {
   enableCurfew: boolean       // 是否开启宵禁模式
   enablePlayRequirement: boolean
   enableGuguBattle: boolean // 咕咕之战开关
+  enableMatchesRequirement: boolean  // 新增：是否需要场次需求开关
 }
 
 export const Config: Schema<Config> = Schema.intersect([
@@ -63,6 +64,8 @@ export const Config: Schema<Config> = Schema.intersect([
       .description('禁用全局兑换限制(谨慎开启)').default(false),
     pointBonusEnabled: Schema.boolean()  // 新增配置项
       .description('是否开启积分加成功能').default(false),
+    enableMatchesRequirement: Schema.boolean()  // 新增配置项
+      .description('兑换物品是否需要场次需求').default(true),  // 默认开启
   }).description('赛季配置'),
 
   // 对战系统配置组
@@ -2099,21 +2102,25 @@ export function apply(ctx: Context, config: Config) {
         const configname = itemConfig[name];
         if (!configname) return '无效的物品名称，请重新输入。';
 
-        // === 新增：场次要求配置 ===
-        const matchesRequirement = {
-          t3: 150,
-          t2: 200,
-          t1: 250,
-          t0: 350
-        };
+        // === 修改：添加配置检查 ===
+        if (config.enableMatchesRequirement) {
 
-        // 获取当前物品的品质所需场次
-        const requiredMatches = matchesRequirement[configname.quality];
+          // === 新增：场次要求配置 ===
+          const matchesRequirement = {
+            t3: 150,
+            t2: 200,
+            t1: 250,
+            t0: 350
+          };
 
-        // 检查赛季场次是否达标
-        if (seasonMatches < requiredMatches) {
-          return `❌ 兑换【${name}】需要在本赛季完成${requiredMatches}场游戏\n` +
-            `您当前赛季场次: ${seasonMatches}场（还需${requiredMatches - seasonMatches}场）`;
+          // 获取当前物品的品质所需场次
+          const requiredMatches = matchesRequirement[configname.quality];
+
+          // 检查赛季场次是否达标
+          if (seasonMatches < requiredMatches) {
+            return `❌ 兑换【${name}】需要在本赛季完成${requiredMatches}场游戏\n` +
+              `您当前赛季场次: ${seasonMatches}场（还需${requiredMatches - seasonMatches}场）`;
+          }
         }
 
         const userRecords = await ctx.database.get('ggcevo_exchange', { handle, item: name });
