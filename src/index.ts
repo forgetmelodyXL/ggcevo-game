@@ -827,7 +827,7 @@ export function apply(ctx: Context, config: Config) {
       // 检查签到记录是否存在
       const [record] = await ctx.database.get('ggcevo_sign', { handle: handle });
       if (!record) {
-        return '📅 请先进行一次签到，初始化抽奖记录后再进行抽奖。';
+        return '📅 请先进行一次签到后再进行抽奖。';
       }
 
       const [backpack] = await ctx.database.get('ggcevo_backpack', { handle: handle, itemId: 1 })
