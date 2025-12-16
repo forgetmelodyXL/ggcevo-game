@@ -824,8 +824,14 @@ export function apply(ctx: Context, config: Config) {
         return `⛔ 您已被列入黑名单。`
       }
 
+      // 检查签到记录是否存在
+      const [record] = await ctx.database.get('ggcevo_sign', { handle: handle });
+      if (!record) {
+        return '📅 请先进行一次签到，初始化抽奖记录后再进行抽奖。';
+      }
+
       const [backpack] = await ctx.database.get('ggcevo_backpack', { handle: handle, itemId: 1 })
-      const quantity = backpack?.quantity;
+      const quantity = backpack?.quantity || 0;
       if (quantity < 1) {
         return "您背包内的咕咕币不足。"
       }
@@ -839,13 +845,12 @@ export function apply(ctx: Context, config: Config) {
         const result = await gachaWithPity(ctx, handle)
         if (result) winCount++
       }
-      const [record] = await ctx.database.get('ggcevo_sign', { handle: handle })
       return [
         `🎰 您使用了${quantity}枚咕咕币`,
         winCount > 0 ?
           `🎉 其中获得${winCount}张兑换券！` :
           '💔 本次未获得任何兑换券',
-        `📊 当前保底进度：${record.pityCounter}/90`
+        `📊 当前保底进度：${record.pityCounter || 0}/90`
       ].join('\n')
     });
 
@@ -1951,7 +1956,8 @@ export function apply(ctx: Context, config: Config) {
           `处罚原因: ${item.reason}`,
           `处罚次数: ${item.count}`,
           `审核人: ${item.reviewer}`,
-          `处罚时间: ${item.date.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`,
+          // 将 toLocaleString 改为 toLocaleDateString 只显示日期
+          `处罚时间: ${item.date.toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })}`,
         ];
         let finalText = baseInfo.join('\n');
         //if (item.comment) finalText += `\n备注: ${item.comment}`;
