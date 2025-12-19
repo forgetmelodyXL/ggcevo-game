@@ -805,54 +805,59 @@ export function apply(ctx: Context, config: Config) {
 
 
 
-  ctx.command('ggcevo/抽奖')
-    .action(async (argv) => {
-      const session = argv.session;
-      let winCount = 0;
+ctx.command('ggcevo/抽奖')
+  .action(async (argv) => {
+    const session = argv.session;
+    let winCount = 0;
 
-      const [profile] = await ctx.database.get('sc2arcade_player', { userId: session.userId, isActive: true });
+    const [profile] = await ctx.database.get('sc2arcade_player', { userId: session.userId, isActive: true });
 
-      if (!profile) {
-        return '🔒 需要先绑定游戏句柄。';
-      }
+    if (!profile) {
+      return '🔒 需要先绑定游戏句柄。';
+    }
 
-      const { regionId, realmId, profileId } = profile;
-      const handle = `${regionId}-S2-${realmId}-${profileId}`;
+    const { regionId, realmId, profileId } = profile;
+    const handle = `${regionId}-S2-${realmId}-${profileId}`;
 
-      const existingEntries = await ctx.database.get('ggcevo_blacklist', { handle })
-      if (existingEntries.length > 0) {
-        return `⛔ 您已被列入黑名单。`
-      }
+    const existingEntries = await ctx.database.get('ggcevo_blacklist', { handle })
+    if (existingEntries.length > 0) {
+      return `⛔ 您已被列入黑名单。`
+    }
 
-      // 检查签到记录是否存在
-      const [record] = await ctx.database.get('ggcevo_sign', { handle: handle });
-      if (!record) {
-        return '📅 请先进行一次签到后再进行抽奖。';
-      }
+    // 检查签到记录是否存在
+    const [record] = await ctx.database.get('ggcevo_sign', { handle: handle });
+    if (!record) {
+      return '📅 请先进行一次签到后再进行抽奖。';
+    }
 
-      const [backpack] = await ctx.database.get('ggcevo_backpack', { handle: handle, itemId: 1 })
-      const quantity = backpack?.quantity || 0;
-      if (quantity < 1) {
-        return "您背包内的咕咕币不足。"
-      }
-      await ctx.database.upsert('ggcevo_backpack', [{
-        handle,
-        itemId: 1,
-        quantity: 0
-      }])
+    const [backpack] = await ctx.database.get('ggcevo_backpack', { handle: handle, itemId: 1 })
+    const quantity = backpack?.quantity || 0;
+    if (quantity < 1) {
+      return "您背包内的咕咕币不足。"
+    }
+    
+    await ctx.database.upsert('ggcevo_backpack', [{
+      handle,
+      itemId: 1,
+      quantity: 0
+    }])
 
-      for (let i = 0; i < quantity; i++) {
-        const result = await gachaWithPity(ctx, handle)
-        if (result) winCount++
-      }
-      return [
-        `🎰 您使用了${quantity}枚咕咕币`,
-        winCount > 0 ?
-          `🎉 其中获得${winCount}张兑换券！` :
-          '💔 本次未获得任何兑换券',
-        `📊 当前保底进度：${record.pityCounter || 0}/90`
-      ].join('\n')
-    });
+    for (let i = 0; i < quantity; i++) {
+      const result = await gachaWithPity(ctx, handle)
+      if (result) winCount++
+    }
+    
+    // 重新获取最新的保底进度
+    const [updatedRecord] = await ctx.database.get('ggcevo_sign', { handle: handle });
+    
+    return [
+      `🎰 您使用了${quantity}枚咕咕币`,
+      winCount > 0 ?
+        `🎉 其中获得${winCount}张兑换券！` :
+        '💔 本次未获得任何兑换券',
+      `📊 当前保底进度：${updatedRecord?.pityCounter || 0}/90`
+    ].join('\n')
+  });
 
   ctx.command('ggcevo/单抽')
     .action(async (argv) => {
