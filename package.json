@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-ggcevo-game",
   "description": "星际争霸2咕咕虫-evolved地图的专属游戏助手插件，集成天梯排行、抽奖系统、签到福利、兑换商城等丰富功能。",
-  "version": "2.0.9",
+  "version": "2.0.10",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "files": [
