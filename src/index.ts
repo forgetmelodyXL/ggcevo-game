@@ -8644,92 +8644,95 @@ PK同玩家限战：1次/日
 
   // 抽奖指令
   ctx.command('roulette/轮盘抽奖 <target>', '抽奖（输入轮盘ID或轮盘组名称）')
-    .option('count', '-c <count:number> 抽奖次数，默认1次', { fallback: 1 })
-    .action(async ({ session, options }, target) => {
-      if (!target) return '请输入轮盘ID（数字）或轮盘组名称（中文）'
+  .option('count', '-c <count:number> 抽奖次数，默认1次', { fallback: 1 })
+  .action(async ({ session, options }, target) => {
+    if (!target) return '请输入轮盘ID（数字）或轮盘组名称（中文）'
 
-      const count = Math.min(Math.max(1, options.count || 1), 10) // 限制1-10次
+    const count = Math.min(Math.max(1, options.count || 1), 10) // 限制1-10次
 
-      // 判断输入是数字（轮盘ID）还是中文（轮盘组名称）
-      const isNumeric = /^\d+$/.test(target)
+    // 判断输入是数字（轮盘ID）还是中文（轮盘组名称）
+    const isNumeric = /^\d+$/.test(target)
 
-      if (isNumeric) {
-        // 按轮盘ID抽奖
-        const roulette = await ctx.model.get('roulettes', { id: parseInt(target) })
-        if (!roulette || roulette.length === 0) {
-          return `轮盘 ID ${target} 不存在`
-        }
-
-        const items = roulette[0].items
-        if (items.length === 0) {
-          return '该轮盘没有可抽奖的选项'
-        }
-
-        const results = []
-        for (let i = 0; i < count; i++) {
-          const randomIndex = Math.floor(Math.random() * items.length)
-          results.push(items[randomIndex])
-        }
-
-        let message = `轮盘 ID: ${target}\n抽奖结果：\n`
-        if (count === 1) {
-          message += `🎉 ${results[0]} 🎉`
-        } else {
-          results.forEach((result, index) => {
-            message += `${index + 1}. ${result}\n`
-          })
-        }
-
-        return message
-      } else {
-        // 按轮盘组名称抽奖 - 禁止指定次数
-        if (count !== 1) {
-          return '轮盘组抽奖不支持指定次数，将从组内每个轮盘各抽取一个结果'
-        }
-
-        const group = await ctx.model.get('roulette_groups', { name: target })
-        if (!group || group.length === 0) {
-          return `轮盘组 "${target}" 不存在`
-        }
-
-        const rouletteIds = group[0].items
-        if (rouletteIds.length === 0) {
-          return '该轮盘组没有可抽奖的轮盘'
-        }
-
-        // 从轮盘组中获取所有轮盘
-        const roulettes = await Promise.all(
-          rouletteIds.map(async (id) => {
-            const roulette = await ctx.model.get('roulettes', { id })
-            return roulette && roulette.length > 0 ? roulette[0] : null
-          })
-        )
-
-        // 过滤掉不存在的轮盘
-        const validRoulettes = roulettes.filter(roulette => roulette !== null)
-        if (validRoulettes.length === 0) {
-          return '轮盘组中的轮盘已不存在'
-        }
-
-        // 从每个轮盘中各抽取一个结果
-        const results = validRoulettes.map(roulette => {
-          if (roulette.items.length === 0) {
-            return { id: roulette.id, result: '（无选项）' }
-          }
-          const randomIndex = Math.floor(Math.random() * roulette.items.length)
-          return { id: roulette.id, result: roulette.items[randomIndex] }
-        })
-
-        // 构建返回消息
-        let message = `轮盘组: ${target}\n抽奖结果（从${results.length}个轮盘中各抽取1个）：\n\n`
-
-        results.forEach((item, index) => {
-          message += `${index + 1}. [轮盘ID: ${item.id}] ${item.result}\n`
-        })
-
-        return message
+    if (isNumeric) {
+      // 按轮盘ID抽奖逻辑（保持不变）
+      const roulette = await ctx.model.get('roulettes', { id: parseInt(target) })
+      if (!roulette || roulette.length === 0) {
+        return `轮盘 ID ${target} 不存在`
       }
-    })
+
+      const items = roulette[0].items
+      if (items.length === 0) {
+        return '该轮盘没有可抽奖的选项'
+      }
+
+      const results = []
+      for (let i = 0; i < count; i++) {
+        const randomIndex = Math.floor(Math.random() * items.length)
+        results.push(items[randomIndex])
+      }
+
+      let message = `轮盘 ID: ${target}\n抽奖结果：\n`
+      if (count === 1) {
+        message += `🎉 ${results[0]} 🎉`
+      } else {
+        results.forEach((result, index) => {
+          message += `${index + 1}. ${result}\n`
+        })
+      }
+
+      return message
+    } else {
+      // 按轮盘组名称抽奖
+      if (count !== 1) {
+        return '轮盘组抽奖不支持指定次数，将从组内每个轮盘各抽取一个结果'
+      }
+
+      // 1. 先从 roulette_groups 表获取轮盘组
+      const groups = await ctx.model.get('roulette_groups', { name: target })
+      if (!groups || groups.length === 0) {
+        return `轮盘组 "${target}" 不存在`
+      }
+
+      const group = groups[0]
+      const rouletteIds = group.items  // 这里应该是轮盘ID数组
+      
+      if (!rouletteIds || rouletteIds.length === 0) {
+        return '该轮盘组没有包含任何轮盘'
+      }
+
+      // 2. 从轮盘组中获取所有轮盘（通过ID）
+      const roulettes = await Promise.all(
+        rouletteIds.map(async (id) => {
+          const roulette = await ctx.model.get('roulettes', { id })
+          return roulette && roulette.length > 0 ? roulette[0] : null
+        })
+      )
+
+      // 3. 过滤掉不存在的轮盘
+      const validRoulettes = roulettes.filter(roulette => roulette !== null)
+      if (validRoulettes.length === 0) {
+        return '轮盘组中的所有轮盘均已不存在'
+      }
+
+      // 4. 从每个轮盘中各抽取一个结果
+      const results = validRoulettes.map(roulette => {
+        if (roulette.items.length === 0) {
+          return { id: roulette.id, result: '（无选项）' }
+        }
+        const randomIndex = Math.floor(Math.random() * roulette.items.length)
+        return { id: roulette.id, result: roulette.items[randomIndex] }
+      })
+
+      // 5. 构建返回消息
+      let message = `轮盘组: ${target}\n抽奖结果（从${results.length}个轮盘中各抽取1个）：\n\n`
+      
+      results.forEach((item, index) => {
+        message += `${index + 1}. [轮盘ID: ${item.id}] ${item.result}\n`
+      })
+
+      return message
+    }
+  })
 
   // 删除轮盘指令
   ctx.command('roulette/删除轮盘 <id:number>', '删除轮盘', { authority: 3 })
