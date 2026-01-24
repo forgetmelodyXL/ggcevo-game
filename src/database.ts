@@ -28,6 +28,12 @@ declare module 'koishi' {
     ggcevo_explore: explore
     ggcevo_global_stats: GlobalStats
     ggcevo_guess: guess
+
+
+    roulettes: Roulette
+    roulette_groups: RouletteGroup
+
+
   }
 }
 
@@ -276,5 +282,19 @@ export interface bossweights {
   bossId: number
   weight: number
   lastSpawn: Date
+}
+
+
+
+
+export interface Roulette {
+  id: number
+  items: string[]
+}
+
+export interface RouletteGroup {
+  id: number
+  name: string
+  items: number[]
 }
 
