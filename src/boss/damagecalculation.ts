@@ -53,7 +53,6 @@ export async function calculateTotalDamage(
     // 2. 模块加成（改为纯加法计算）
     const { totalModAdd, modMessages } = calculateModifiers(equippedWeapon, weaponName);
     effectMessage.push(...modMessages);
-    const modMultiplier = 1 + totalModAdd;
 
     // 3. 职业加成（加法）
     const careerAddResult = await calculateCareerAdditive(ctx, handle, weaponData.type, weaponData.id, careerData);
@@ -63,25 +62,25 @@ export async function calculateTotalDamage(
     const wishAddResult = await calculateWishAdditive(ctx, handle, equippedWeapon);
     if (wishAddResult.message) effectMessage.push(wishAddResult.message);
 
-    // 5. 排名加成（加法）
-    let rankAddResult = { value: 0, message: '' };
-    if (config.pointBonusEnabled) {
-        const [rankRecord] = await ctx.database.get('ggcevo_rank', { handle, rankseason: config.rankseason });
-        const rankAddResult = calculateRankAdditive(rankRecord);
-        if (rankAddResult.message) effectMessage.push(rankAddResult.message);
+    // 5. 额外伤害加成
+    const extraDamageBonus = await calculateExtraDamageBonus(ctx, handle, weaponName, careerData);
+    if (extraDamageBonus.value > 0) {
+        effectMessage.push(extraDamageBonus.message);
     }
 
-    // 其他加成总和（职业+祈愿+排名）
-    const otherAdditive = careerAddResult.value + wishAddResult.value + rankAddResult.value;
-    const otherMultiplier = 1 + otherAdditive;
-
-    // 最终伤害计算（乘法）
-    let finalDamage = baseDamage * tagMultiplier * modMultiplier * otherMultiplier;
+    // 最终伤害计算 - 按照要求的顺序：基础伤害*(模块加成+职业加成+祈愿加成)*标签加成*额外伤害加成
+    let finalDamage = baseDamage * (1 + totalModAdd + careerAddResult.value + wishAddResult.value) * tagMultiplier * (1 + extraDamageBonus.value);
 
     // 暴击计算（单独函数处理）
     const { hasCrit, critSources } = await calculateCrit(ctx, handle, equippedWeapon, weaponName, careerData, weaponData.type);
     // 添加暴击率信息（无论是否暴击）
     effectMessage.push(...critSources);
+    
+    // 应用暴击伤害
+    if (hasCrit) {
+        finalDamage *= 2; // 暴击伤害翻倍
+        effectMessage.push('💥 暴击！');
+    }
 
     // 保底机制：最低1点伤害
     finalDamage = Math.max(finalDamage, 1);
@@ -157,12 +156,13 @@ async function calculateCrit(
     }
 
     // 暴击韵律祈愿
-    const [critRhythm] = await ctx.database.get('ggcevo_wish', {
-        handle,
-        wishname: '暴击韵律',
-        startTime: { $lte: new Date() },
-        endTime: { $gte: new Date() }
+    const [playerStats] = await ctx.database.get('ggcevo_player_stats', {
+        handle
     });
+    const now = new Date();
+    const critRhythm = playerStats && playerStats.wishname === '暴击韵律' && 
+                      playerStats.lastWishDate <= now && 
+                      new Date(playerStats.lastWishDate.getTime() + 7 * 24 * 60 * 60 * 1000) >= now ? playerStats : null;
 
     if (critRhythm) {
         critRate += 20;
@@ -332,26 +332,24 @@ async function calculateWishAdditive(ctx: Context, handle: string, weapon: any) 
     let value = 0;
     const messages = [];
 
-    // 王权增幅
-    const [sovereign] = await ctx.database.get('ggcevo_wish', {
-        handle,
-        wishname: '王权增幅',
-        startTime: { $lte: new Date() },
-        endTime: { $gte: new Date() }
+    // 获取玩家状态
+    const [playerStats] = await ctx.database.get('ggcevo_player_stats', {
+        handle
     });
-    if (sovereign) {
+    const now = new Date();
+
+    // 王权增幅
+    if (playerStats && playerStats.wishname === '王权增幅' && 
+        playerStats.lastWishDate <= now && 
+        new Date(playerStats.lastWishDate.getTime() + 7 * 24 * 60 * 60 * 1000) >= now) {
         value += 0.05;
         messages.push('👑 王权增幅祈愿：攻击伤害+5%');
     }
 
     // 悲鸣之锋
-    const [lament] = await ctx.database.get('ggcevo_wish', {
-        handle,
-        wishname: '悲鸣之锋',
-        startTime: { $lte: new Date() },
-        endTime: { $gte: new Date() }
-    });
-    if (lament) {
+    if (playerStats && playerStats.wishname === '悲鸣之锋' && 
+        playerStats.lastWishDate <= now && 
+        new Date(playerStats.lastWishDate.getTime() + 7 * 24 * 60 * 60 * 1000) >= now) {
         const levelBonus = 0.05 * weapon.level + 0.1;
         value += levelBonus;
         messages.push(`🗡️ 悲鸣之锋祈愿：攻击伤害+${Math.round(levelBonus * 100)}%`);
@@ -363,23 +361,28 @@ async function calculateWishAdditive(ctx: Context, handle: string, weapon: any) 
     };
 }
 
-// 修改后的排名加成计算函数（每300分增加1%，上限100%）
-function calculateRankAdditive(rankRecord: any): { value: number; message: string } {
-    if (!rankRecord || rankRecord.rank <= 0) return { value: 0, message: "" };
+// 额外伤害加成计算函数
+async function calculateExtraDamageBonus(ctx: Context, handle: string, weaponName: string, careerData: any) {
+    let value = 0;
+    let message = '';
 
-    // 计算基础加成（每300分1%）
-    const baseValue = Math.floor(rankRecord.rank / 300) * 0.01;
+    // 检查雷达面罩效果：辛迪加海盗阵营，拥有雷达面罩，使用侦察步枪
+    if (careerData?.faction === '辛迪加海盗' && weaponName === '侦察步枪') {
+        const [radarMask] = await ctx.database.get('ggcevo_backpack', {
+            handle,
+            itemId: 1006 // 雷达面罩ID
+        });
 
-    // 应用100%上限
-    const cappedValue = Math.min(baseValue, 1.0);
-
-    if (cappedValue > 0) {
-        const percentage = Math.round(cappedValue * 100);
-        return {
-            value: cappedValue,
-            message: `🏆 胜点榜积分加成：攻击伤害+${percentage}%`
-        };
+        if (radarMask?.quantity > 0) {
+            value += 0.05; // 额外造成5%的伤害
+            message = '🛰️ 【雷达面罩】生效：使用侦察步枪时额外造成5%的伤害';
+        }
     }
 
-    return { value: 0, message: "" };
+    return {
+        value,
+        message
+    };
 }
+
+

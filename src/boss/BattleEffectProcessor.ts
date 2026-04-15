@@ -109,17 +109,11 @@ function updateStatsByName(
  * @returns 对应Boss的maxHP（未找到时返回undefined）
  */
 export function getMaxHPByName(bossName: string): number | undefined {
-  // 遍历所有主宰Boss
+  // 遍历所有Boss
   for (const boss of bossPool) {
-    // 检查主宰自身名称是否匹配
-    if (boss.main.name === bossName) {
-      return boss.main.maxHP;
-    }
-    // 检查子代Boss名称是否匹配
-    for (const minion of boss.minions) {
-      if (minion.name === bossName) {
-        return minion.maxHP;
-      }
+    // 检查Boss名称是否匹配
+    if (boss.name === bossName) {
+      return boss.maxHP;
     }
   }
   // 未找到匹配的Boss
@@ -133,17 +127,11 @@ export function getMaxHPByName(bossName: string): number | undefined {
  */
 export function getMaxEnergyByName(bossName: string): number | undefined {
 
-  // 遍历所有主宰Boss
+  // 遍历所有Boss
   for (const boss of bossPool) {
-    // 检查主宰自身名称是否匹配
-    if (boss.main.name === bossName) {
-      return boss.main.maxEnergy; // 返回主宰的maxEnergy
-    }
-    // 检查子代Boss名称是否匹配
-    for (const minion of boss.minions) {
-      if (minion.name === bossName) {
-        return minion.maxEnergy; // 返回子代的maxEnergy
-      }
+    // 检查Boss名称是否匹配
+    if (boss.name === bossName) {
+      return boss.maxEnergy; // 返回Boss的maxEnergy
     }
   }
   // 未找到匹配的Boss
@@ -152,17 +140,11 @@ export function getMaxEnergyByName(bossName: string): number | undefined {
 
 export function getMaxStacksByName(bossName: string): number | undefined {
 
-  // 遍历所有主宰Boss
+  // 遍历所有Boss
   for (const boss of bossPool) {
-    // 检查主宰自身名称是否匹配
-    if (boss.main.name === bossName) {
-      return boss.main.maxStacks; // 返回主宰的maxStacks
-    }
-    // 检查子代Boss名称是否匹配
-    for (const minion of boss.minions) {
-      if (minion.name === bossName) {
-        return minion.maxStacks; // 返回子代的maxStacks
-      }
+    // 检查Boss名称是否匹配
+    if (boss.name === bossName) {
+      return boss.maxStacks; // 返回Boss的maxStacks
     }
   }
   // 未找到匹配的Boss
@@ -175,15 +157,8 @@ export function getMaxStacksByName(bossName: string): number | undefined {
  * @returns 对应Boss的maxShield（未找到时返回undefined）
  */
 export function getMaxShieldByName(bossName: string): number | undefined {
-
-
-  for (const boss of bossPool) {
-    if (boss.main.name === bossName) return boss.main.maxShield;
-    for (const minion of boss.minions) {
-      if (minion.name === bossName) return minion.maxShield;
-    }
-  }
-  return 0;
+  const boss = bossPool.find(b => b.name === bossName);
+  return boss ? boss.maxShield : 0;
 }
 
 /**
@@ -195,10 +170,7 @@ export function getArmorByName(bossName: string): number | undefined {
 
 
   for (const boss of bossPool) {
-    if (boss.main.name === bossName) return boss.main.armor;
-    for (const minion of boss.minions) {
-      if (minion.name === bossName) return minion.armor;
-    }
+    if (boss.name === bossName) return boss.armor;
   }
   return undefined;
 }
@@ -212,10 +184,7 @@ export function getShieldArmorByName(bossName: string): number | undefined {
 
 
   for (const boss of bossPool) {
-    if (boss.main.name === bossName) return boss.main.shieldArmor;
-    for (const minion of boss.minions) {
-      if (minion.name === bossName) return minion.shieldArmor;
-    }
+    if (boss.name === bossName) return boss.shieldArmor;
   }
   return 0;
 }
@@ -4770,9 +4739,7 @@ export function applyPassiveEffects(
     finalDamage *= 1.5;
   }
 
-  if (hasCrit) {
-    finalDamage *= 2;
-  }
+
 
   let burnDamage
 

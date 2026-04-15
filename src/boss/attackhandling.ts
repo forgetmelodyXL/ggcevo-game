@@ -2,7 +2,7 @@ import { Context } from 'koishi'
 import { Config } from '../index'
 import { calculateTotalDamage } from './damagecalculation'
 import { applyPassiveEffects, BattleStatistics, battleStatsMap, getMaxHPByName, getMaxEnergyByName, getMaxStacksByName } from './BattleEffectProcessor'
-import { Spacestationtechnology } from '../careersystem/technology'
+import { Spacestationtechnology } from '../technology'
 import { weaponConfig } from '../weapons'
 import { bossPool } from './boss'
 
@@ -29,9 +29,9 @@ async function getCleanerRewardBroadcast(
     }
 
     // 获取所有警卫长
-    const allGuards = await ctx.database.get('ggcevo_careers', {
-        career: '警卫长'
-    });
+    const allSigns = await ctx.database.get('ggcevo_sign', {});
+    const allGuards = allSigns.filter(sign => sign.career === '警卫长');
+
 
     // 如果没有警卫长则跳过
     if (allGuards.length > 0) {
@@ -78,9 +78,8 @@ async function handleBossDefeatRewards(
     ctx: Context,
     targetBoss: any,
 ): Promise<{ rewardMessages: string[] }> {
-    const damageRecords = await ctx.database.select('ggcevo_boss_damage')
+    const damageRecords = await ctx.database.select('ggcevo_player_stats')
         .where({
-            bossGroupId: targetBoss.groupId,
             totalDamage: { $gt: 0 }
         })
         .orderBy('totalDamage', 'desc')
@@ -97,14 +96,16 @@ async function handleBossDefeatRewards(
     const handles = damageRecords.map(r => r.handle);
 
     // 1. 获取精灵双倍祈愿记录（仅用于双倍资源兑换券）
-    const doubleWishRecords = await ctx.database.get('ggcevo_wish', {
-        handle: { $in: handles },
-        wishname: '精灵双倍',
-        startTime: { $lte: new Date() },
-        endTime: { $gte: new Date() },
-        isused: false
+    const playerStatsRecords = await ctx.database.get('ggcevo_player_stats', {
+        handle: { $in: handles }
     });
-    const doubleWishIds = doubleWishRecords.map(r => r.id);
+    const doubleWishRecords = playerStatsRecords.filter(record => {
+        const now = new Date();
+        return record.wishname === '精灵双倍' && 
+               record.lastWishDate <= now && 
+               new Date(record.lastWishDate.getTime() + 7 * 24 * 60 * 60 * 1000) >= now && 
+               !record.wishUsed;
+    });
     const doubleWishHandles = new Set(doubleWishRecords.map(r => r.handle));
 
     // 2. 按排名分配资源兑换券奖励（根据新阶梯）
@@ -131,7 +132,7 @@ async function handleBossDefeatRewards(
 
         const reward = {
             coupons,
-            playerName: record.playerName,
+            playerName: record.handle, // 使用 handle 作为玩家名称
             rank,
             hasDoubleWish
         };
@@ -209,9 +210,9 @@ async function handleBossDefeatRewards(
         }
 
         // 标记已使用的精灵双倍祈愿记录
-        if (doubleWishIds.length > 0) {
-            await ctx.database.set('ggcevo_wish', { id: { $in: doubleWishIds } }, {
-                isused: true
+        if (doubleWishHandles.size > 0) {
+            await ctx.database.set('ggcevo_player_stats', { handle: { $in: Array.from(doubleWishHandles) } }, {
+                wishUsed: true
             });
         }
     });
@@ -219,8 +220,8 @@ async function handleBossDefeatRewards(
     return { rewardMessages };
 }
 
-// ====================== 主目标攻击函数 ======================
-export async function handlePrimaryAttack(
+// ====================== 攻击处理函数 ======================
+export async function handleAttack(
     ctx: Context,
     session: any,
     handle: string,
@@ -230,18 +231,21 @@ export async function handlePrimaryAttack(
     activeBosses: any[],
     weaponName: string,
     careerData: any,
+    isScatterAttack: boolean = false,
+    scatterRatio: number = 1.0
 ) {
     // 计算基础伤害
     const damageResult = await calculateTotalDamage(ctx, session, config, equippedWeapon, targetBoss, careerData);
 
+    // 应用散射攻击的伤害修正
+    const baseDamage = isScatterAttack ? Math.round(damageResult.baseDamage * scatterRatio) : damageResult.damage;
+
     const ignoreReduction = await handleIgnoreReductionEffects(ctx, handle, weaponName, targetBoss)
 
     // 处理效果
+    const EffectProcessor = applyPassiveEffects(targetBoss, activeBosses, weaponName, baseDamage, damageResult.hasCrit, ignoreReduction.ignoreRate, careerData, equippedWeapon)
 
-
-    const EffectProcessor = applyPassiveEffects(targetBoss, activeBosses, weaponName, damageResult.damage, damageResult.hasCrit, ignoreReduction.ignoreRate, careerData, equippedWeapon)
-
-    const initialDamage = EffectProcessor.finalDamage;
+    const finalDamage = EffectProcessor.finalDamage;
 
     await saveAndClearStats(ctx)
 
@@ -253,16 +257,63 @@ export async function handlePrimaryAttack(
     }
 
     const [currentboss] = await ctx.database.get('ggcevo_boss', { name: targetBoss.name });
-
-    const currentHP = currentboss.HP
-
+    const currentHP = currentboss.HP;
 
     // 最终是否被击败
     const isDefeated = currentHP <= 0;
 
+    // 收集任务更新
+    const taskUpdates: { taskId: number, count: number }[] = [];
+    if (EffectProcessor.radiationLayerAdded) {
+        // 检查是否安装了辐射充能核心
+        const hasRadiationCore = equippedWeapon.installedMods?.includes('辐射充能核心')
+        // 根据模组存在决定任务计数
+        const count = hasRadiationCore ? 2 : 1;
+        taskUpdates.push({ taskId: 1, count });
+    }
+    if (EffectProcessor.coldLayerAdded) {
+        const hasNitrogenCore = equippedWeapon.installedMods?.includes('氮气压缩核心');
+        const count = hasNitrogenCore ? 2 : 1;
+        taskUpdates.push({ taskId: 2, count });
+    }
+    if (EffectProcessor.bileDetonationTrigger) {
+        taskUpdates.push({ taskId: 3, count: 1 });
+    }
+    if (EffectProcessor.layerReduced) {
+        taskUpdates.push({ taskId: 4, count: EffectProcessor.reductionAmount });
+    }
+    if (EffectProcessor.energyDrained) {
+        taskUpdates.push({ taskId: 5, count: EffectProcessor.drainFactor });
+    }
+    // 任务6：装甲破坏者 - 根据武器类型和模组计数
+    if (weaponName === 'M4AE脉冲步枪') {
+        // 脉冲步枪效果触发时完成2次
+        taskUpdates.push({ taskId: 6, count: 2 });
+    } else if (weaponName === '动力钻头' && equippedWeapon.installedMods?.includes('强力钻刺核心')) {
+        // 动力钻头+强力钻刺核心完成1次
+        taskUpdates.push({ taskId: 6, count: 1 });
+    }
+    // 处理燃烧层添加任务
+    if (EffectProcessor.burnLayerAdded) {
+        let burnLayers = 1; // 默认叠加1层
+
+        // 检查武器名称是否为'龙息霰弹枪'
+        if (weaponName === '龙息霰弹枪') {
+            burnLayers = 2; // 龙息霰弹枪固定叠加2层
+        }
+
+        // 检查是否安装'助燃核心'模组
+        if (equippedWeapon.installedMods?.includes('助燃核心')) {
+            burnLayers *= 2; // 有模组时双倍叠加层数
+        }
+
+        // 添加任务更新计数
+        taskUpdates.push({ taskId: 7, count: burnLayers });
+    }
+
     // 返回结果
     return {
-        initialDamage,
+        damage: finalDamage,
         currentHP,
         isDefeated,
         hasCrit: damageResult.hasCrit,
@@ -278,6 +329,7 @@ export async function handlePrimaryAttack(
         burnLayerAdded: EffectProcessor.burnLayerAdded,
         drainFactor: EffectProcessor.drainFactor,
         reductionAmount: EffectProcessor.reductionAmount,
+        taskUpdates
     };
 }
 
@@ -316,90 +368,25 @@ export async function handleScatterAttack(
 
     // 处理每个次要目标
     for (const secondaryTarget of secondaryTargets) {
-        // 计算该次要目标的伤害
-        const damageResult = await calculateTotalDamage(
-            ctx, session, config, equippedWeapon, secondaryTarget, careerData
+        // 使用新的攻击处理函数
+        const attackResult = await handleAttack(
+            ctx, session, handle, config, equippedWeapon, secondaryTarget, activeBosses, weaponName, careerData, true, scatterRatio
         );
-
-        const secondaryDamage = Math.round(damageResult.baseDamage * scatterRatio);
-
-        const ignoreReduction = await handleIgnoreReductionEffects(ctx, handle, weaponName, secondaryTarget)
-
-        // 处理效果
-        const EffectProcessor = applyPassiveEffects(secondaryTarget, activeBosses, weaponName, secondaryDamage, damageResult.hasCrit, ignoreReduction.ignoreRate, careerData, equippedWeapon)
-
-        const actualDamage = EffectProcessor.finalDamage;
-
-        await saveAndClearStats(ctx)
-
-        const [currentboss] = await ctx.database.get('ggcevo_boss', { name: secondaryTarget.name });
-
-        const currentHP = currentboss.HP
 
         // 记录伤害
         extraDamages.push({
             name: secondaryTarget.name,
-            damage: actualDamage
+            damage: attackResult.damage
         });
 
-
         // 收集任务更新
-        if (EffectProcessor.radiationLayerAdded) {
-            // 检查是否安装了辐射充能核心
-            const hasRadiationCore = equippedWeapon.installedMods?.includes('辐射充能核心')
-
-            // 根据模组存在决定任务计数
-            const count = hasRadiationCore ? 2 : 1;
-            taskUpdates.push({ taskId: 1, count });
-        }
-        if (EffectProcessor.coldLayerAdded) {
-            const hasNitrogenCore = equippedWeapon.installedMods?.includes('氮气压缩核心');
-            const count = hasNitrogenCore ? 2 : 1;
-            taskUpdates.push({ taskId: 2, count });
-        }
-        if (EffectProcessor.bileDetonationTrigger) {
-            taskUpdates.push({ taskId: 3, count: 1 });
-        }
-        if (EffectProcessor.layerReduced) {
-            taskUpdates.push({ taskId: 4, count: EffectProcessor.reductionAmount });
-        }
-        if (EffectProcessor.energyDrained) {
-            taskUpdates.push({ taskId: 5, count: EffectProcessor.drainFactor });
-        }
-        // 任务6：装甲破坏者 - 根据武器类型和模组计数
-        if (weaponName === 'M4AE脉冲步枪') {
-            // 脉冲步枪效果触发时完成2次
-            taskUpdates.push({ taskId: 6, count: 2 });
-        } else if (weaponName === '动力钻头' && equippedWeapon.installedMods?.includes('强力钻刺核心')) {
-            // 动力钻头+强力钻刺核心完成1次
-            taskUpdates.push({ taskId: 6, count: 1 });
-        }
-        // 处理燃烧层添加任务
-        if (EffectProcessor.burnLayerAdded) {
-            let burnLayers = 1; // 默认叠加1层
-
-            // 检查武器名称是否为'龙息霰弹枪'
-            if (weaponName === '龙息霰弹枪') {
-                burnLayers = 2; // 龙息霰弹枪固定叠加4层
-            }
-
-            // 检查是否安装'助燃核心'模组
-            if (equippedWeapon.installedMods?.includes('助燃核心')) {
-                burnLayers *= 2; // 有模组时双倍叠加层数
-            }
-
-            // 添加任务更新计数
-            taskUpdates.push({ taskId: 7, count: burnLayers });
-        }
-
-        // 更新目标状态
-        const isDead = currentHP <= 0;
+        taskUpdates.push(...attackResult.taskUpdates);
 
         // 收集被动消息
-        scatterEffectMessages.push(...EffectProcessor.messages.map(m => ` 对 ${secondaryTarget.name} ${m}`));
+        scatterEffectMessages.push(...attackResult.passiveMessages.map(m => ` 对 ${secondaryTarget.name} ${m}`));
 
         // 记录死亡目标
-        if (isDead) {
+        if (attackResult.isDefeated) {
             actuallyDead.push(secondaryTarget.name);
         }
     }
@@ -433,35 +420,24 @@ export async function handleDeathTargets(
 
         // 主宰死亡处理
         if (deadBoss.type === '主宰') {
-            // 设置所有相关BOSS为非激活状态
-            await ctx.database.set('ggcevo_boss', { groupId: deadBoss.groupId }, {
+            // 设置所有激活的BOSS为非激活状态
+            await ctx.database.set('ggcevo_boss', { isActive: true }, {
                 isActive: false,
                 HP: 0
             });
 
-            // +++ 修改：计算下一个0点或12点作为复活时间 +++
+            // +++ 修改：计算下一小时作为复活时间 +++
             const now = new Date();
             let nextRespawn = new Date();
-
-            // 获取当前小时
-            const hours = now.getHours();
-
-            if (hours < 12) {
-                // 如果当前时间小于12点，设置为当天的12点
-                nextRespawn.setHours(12, 0, 0, 0);
-            } else {
-                // 如果当前时间大于等于12点，设置为次日的0点
-                nextRespawn.setDate(nextRespawn.getDate() + 1);
-                nextRespawn.setHours(0, 0, 0, 0);
-            }
+            
+            // 设置为下一小时
+            nextRespawn.setHours(nextRespawn.getHours() + 1);
+            nextRespawn.setMinutes(0, 0, 0);
 
             // 设置复活时间
             await ctx.database.set('ggcevo_boss', { name: deadBoss.name }, {
                 respawnTime: nextRespawn
             });
-
-            // 获取奖励消息
-            const { rewardMessages } = await handleBossDefeatRewards(ctx, deadBoss);
 
             // +++ 修改广播消息反映新的复活规则 +++
             const timeFormat = nextRespawn.toLocaleTimeString('zh-CN', {
@@ -472,12 +448,9 @@ export async function handleDeathTargets(
 
             bossBroadcast.push(
                 `🎯 主宰 ${deadBoss.name} 已被 ${killerName} 击败！`,
-                `所有子代已消失，主宰将在 ${timeFormat} 重生`,
-                '',
-                '🏆 伤害排行榜奖励：',
-                ...rewardMessages
+                `所有子代已消失，下一个主宰将在 ${timeFormat} 重生`
             );
-        } else if (deadBoss.name === '巢穴雷兽' || deadBoss.name === '巢穴战士' || deadBoss.name === '巢穴甲虫') {
+        } else if (deadBoss.type === '巢穴子代') {
             await ctx.database.remove('ggcevo_boss', { name: deadBoss.name });
         } else {
             await ctx.database.upsert('ggcevo_boss', [{
@@ -506,9 +479,9 @@ export async function calculateRewards(
     };
 
     // 1. 获取职业和安防系统等级
-    const [careerData] = await ctx.database.get('ggcevo_careers', { handle });
+    const [careerData] = await ctx.database.get('ggcevo_sign', { handle });
     const career = careerData?.career;
-    const group = careerData?.group;  // 获取角色阵营信息
+    const group = careerData?.faction;  // 获取角色阵营信息
 
     const [securityTech] = await ctx.database.get('ggcevo_tech', {
         handle,
@@ -564,7 +537,7 @@ export async function calculateRewards(
         const totalRedCrystal = baseRedCrystal + damageBonus;
 
         // 更新红晶数量
-        await ctx.database.upsert('ggcevo_careers', [{
+        await ctx.database.upsert('ggcevo_sign', [{
             handle,
             redcrystal: (careerData?.redcrystal || 0) + totalRedCrystal
         }], ['handle']);
@@ -690,30 +663,23 @@ export async function updateBossDamageRecord(
     ctx: Context,
     handle: string,
     playerName: string,
-    bossGroupId: number,
     damageAmount: number
 ) {
     // 查询现有记录
-    const [existingRecord] = await ctx.database.get('ggcevo_boss_damage', {
-        handle,
-        bossGroupId
+    const [existingRecord] = await ctx.database.get('ggcevo_player_stats', {
+        handle
     });
 
     // 更新或插入记录
-    await ctx.database.upsert('ggcevo_boss_damage', [{
+    await ctx.database.upsert('ggcevo_player_stats', [{
         handle,
-        bossGroupId,
-        playerName,
         totalDamage: (existingRecord?.totalDamage || 0) + damageAmount,
         attackCount: (existingRecord?.attackCount || 0) + 1,
-        lastattackDate: new Date()
-    }], ['handle', 'bossGroupId']);
+        lastattackDate: new Date(),
+        spaceshipId: existingRecord?.spaceshipId || 0
+    }], ['handle']);
 
-    // ======== 新增：记录攻击日志 ========
-    await ctx.database.create('ggcevo_damage_logs', {
-        handle,
-        date: new Date()  // 使用当前时间戳
-    });
+    // ======== 攻击日志记录已移除，因为ggcevo_damage_logs表已删除 ========
 }
 
 // 任务更新函数
@@ -903,19 +869,10 @@ async function handleIgnoreReductionEffects(
 
     // 3. 职业专属效果
     const handleCareerEffects = async () => {
-        const [careerData] = await ctx.database.get('ggcevo_careers', { handle });
-        if (!careerData || careerData.group !== '辛迪加海盗') return;
+        const [careerData] = await ctx.database.get('ggcevo_sign', { handle });
+        if (!careerData || careerData.faction !== '辛迪加海盗') return;
 
-        // 雷达面罩效果
-        const [radarMask] = await ctx.database.get('ggcevo_warehouse', {
-            handle,
-            itemId: 6
-        });
-
-        if (radarMask?.quantity > 0) {
-            ignoreEffects.push(0.1);
-            messages.push(`🛰️ 【雷达面罩】生效：无视10%伤害减免`);
-        }
+        // 雷达面罩效果已移除
     }
 
     // 4. 职业效果处理
@@ -947,26 +904,21 @@ export async function testAttackFunction(
     weaponName: string,
     careerData: any,
 ) {
-    // 计算基础伤害
-    const damageResult = await calculateTotalDamage(ctx, session, config, equippedWeapon, targetBoss, careerData);
-
-    const ignoreReduction = await handleIgnoreReductionEffects(ctx, handle, weaponName, targetBoss)
-
-    // 处理效果
-    const EffectProcessor = applyPassiveEffects(targetBoss, activeBosses, weaponName, damageResult.damage, damageResult.hasCrit, ignoreReduction.ignoreRate, careerData, equippedWeapon)
-
-    const initialDamage = EffectProcessor.finalDamage;
+    // 使用新的攻击处理函数
+    const attackResult = await handleAttack(
+        ctx, session, handle, config, equippedWeapon, targetBoss, activeBosses, weaponName, careerData
+    );
 
     // 清空 battleStatsMap
     Object.keys(battleStatsMap).forEach(key => delete battleStatsMap[key]);
 
     // 返回结果
     return {
-        initialDamage,
-        hasCrit: damageResult.hasCrit,
-        effectMessage: damageResult.effectMessage,
-        passiveMessages: EffectProcessor.messages,
-        ignoreMessage: ignoreReduction.messages,
+        initialDamage: attackResult.damage,
+        hasCrit: attackResult.hasCrit,
+        effectMessage: attackResult.effectMessage,
+        passiveMessages: attackResult.passiveMessages,
+        ignoreMessage: attackResult.ignoreMessage,
     };
 }
 
@@ -977,33 +929,23 @@ export async function createNestlingBosses(ctx: any, nestlingNames: string | str
 
     // 在bossPool中查找匹配的子代
     for (const name of names) {
-        let foundMinion = null;
-        let groupId = null;
+        // 直接在bossPool中查找名称匹配的boss
+        const bossConfig = bossPool.find(b => b.name === name);
 
-        for (const bossGroup of bossPool) {
-            const minion = bossGroup.minions.find(m => m.name === name);
-            if (minion) {
-                foundMinion = minion;
-                groupId = bossGroup.id;
-                break;
-            }
-        }
-
-        if (!foundMinion) {
+        if (!bossConfig) {
             // 改为只抛出当前出错的名称
             throw new Error(`未知的巢穴子代名称: ${name}`);
         }
 
         // 在数据库中创建巢穴子代
         const createdBoss = await ctx.database.create('ggcevo_boss', {
-            name: foundMinion.name,
-            type: foundMinion.type,
-            HP: foundMinion.maxHP,
-            tags: foundMinion.tags,
-            skills: [...foundMinion.passive],
-            energy: foundMinion.maxEnergy,
-            armor: foundMinion.armor,
-            groupId: groupId,
+            name: bossConfig.name,
+            type: bossConfig.type,
+            HP: bossConfig.maxHP,
+            tags: bossConfig.tags,
+            skills: [...bossConfig.passive],
+            energy: bossConfig.maxEnergy,
+            armor: bossConfig.armor,
             isActive: true,
             respawnTime: new Date()
         });

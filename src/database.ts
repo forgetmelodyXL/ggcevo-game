@@ -5,35 +5,15 @@ declare module 'koishi' {
     ggcevo_welfare: WelfareClaim
     ggcevo_activity: ActivityInfo
     ggcevo_rank: RankRecord
-    ggcevo_punishment: PunishmentRecord
     ggcevo_exchange: ExchangeLog
     ggcevo_adminbenefit: AdminBenefit
-    ggcevo_blacklist: Blacklist
-    ggcevo_pk: PKProfile
+    ggcevo_player_stats: PlayerStats
     ggcevo_pk_logs: PKLogs
     ggcevo_weapons: WeaponInventory
     ggcevo_boss: BossInfo
-    ggcevo_boss_damage: BossDamage
-    ggcevo_damage_logs: damageLogs
     ggcevo_boss_weights: bossweights
-    ggcevo_wish: WishRecord
-    ggcevo_careers: CareerInfo
-    ggcevo_warehouse: Warehouse
     ggcevo_tech: TechProgress
-    ggcevo_Mining: MiningRecord
     ggcevo_task: TaskProgress
-    ggcevo_permissions: Permissions
-    ggcevo_pk_protection: PKProtection
-    ggcevo_spaceship: spaceship
-    ggcevo_explore: explore
-    ggcevo_global_stats: GlobalStats
-    ggcevo_guess: guess
-
-
-    roulettes: Roulette
-    roulette_groups: RouletteGroup
-
-
   }
 }
 
@@ -45,6 +25,7 @@ export interface Backpack {
 
 export interface SignRecord {
   handle: string
+  name: string // 玩家名称
   lastSign: Date
   monthlyDays: number
   totalRewards: number
@@ -52,6 +33,11 @@ export interface SignRecord {
   pityCounter: number
   fullPityCount: number
   bigPrizeCount: number
+  faction: string // 阵营的英文字段
+  career: string // 职业
+  redcrystal: number // 红水晶
+  syndicateCareer: string // 辛迪加职业
+  hp: number // HP值
 }
 
 export interface WelfareClaim {
@@ -66,10 +52,7 @@ export interface ActivityInfo {
   description: string
   itemId: number
   quantity: number
-  startTime: Date
   endTime: Date
-  creator: string
-  status: '未开始' | '进行中' | '已结束'
 }
 
 export interface RankRecord {
@@ -80,18 +63,6 @@ export interface RankRecord {
   matches: number
   rankseason: string
   Blacklist: boolean
-}
-
-export interface PunishmentRecord {
-  id: number
-  handle: string
-  qq: string
-  level: string
-  reason: string
-  count: number
-  reviewer: string
-  date: Date
-  comment?: string
 }
 
 export interface ExchangeLog {
@@ -111,21 +82,28 @@ export interface AdminBenefit {
   lastSign: Date
 }
 
-export interface Blacklist {
+export interface PlayerStats {
   handle: string
-  name: string
-  createdAt: Date
-}
-
-export interface PKProfile {
-  handle: string
-  name: string
   total: number
   wins: number
   todayCount: number
   lastPK: Date
-  enable: boolean
-  lastToggle: Date
+  totalDamage: number
+  attackCount: number
+  lastattackDate: Date
+  wishname: string
+  wishUsed: boolean
+  lastWishDate: Date
+  miningStartTime: Date
+  totalMined: number
+  spaceshipId: number
+  exploreStartTime: Date
+  galaxy: string
+  exploreSuccessCount: number
+  plunderBonus: number
+  totalExploreGold: number
+  totalExploreItems: number
+  buff: number[]
 }
 
 export interface PKLogs {
@@ -148,7 +126,6 @@ export interface WeaponInventory {
 
 export interface BossInfo {
   name: string
-  groupId: number
   type: string
   HP: number
   energy: number
@@ -166,50 +143,18 @@ export interface BossInfo {
   respawnTime: Date
 }
 
-export interface BossDamage {
-  handle: string
-  playerName: string
-  totalDamage: number
-  attackCount: number
-  bossGroupId: number
-  lastattackDate: Date
-}
 
-export interface WishRecord {
-  id: number
-  handle: string
-  wishname: string
-  startTime: Date
-  endTime: Date
-  isused: boolean
-}
 
-export interface CareerInfo {
-  handle: string
-  group: string
-  career: string
-  redcrystal: number
-  date: Date
-}
 
-export interface Warehouse {
-  handle: string
-  itemId: number
-  quantity: number
-  bonus: number
-  upgrades: number
-}
+
+
+
+
 
 export interface TechProgress {
   handle: string
   techId: number
   level: number
-}
-
-export interface MiningRecord {
-  handle: string
-  startTime: Date
-  totalMined: number
 }
 
 export interface TaskProgress {
@@ -219,82 +164,24 @@ export interface TaskProgress {
   Completions: number
 }
 
-export interface Permissions {
-  handle: string
-  legendarypermissions: number
-  explosiondoorauthority: number
-}
 
-export interface PKProtection {
-  id: number // 自增ID（主键）
-  handle: string // 用户唯一标识
-  startTime: Date // 保护起始时间
-  endTime: Date // 保护结束时间
-  /**
-   * 保护状态（建议添加）
-   * active - 保护中
-   * expired - 已过期
-   * canceled - 手动取消
-   */
-  status: 'active' | 'expired' | 'canceled'
-}
 
-export interface spaceship {
-  handle: string
-  id: number
-  createTime: Date
-}
 
-export interface explore {
-  handle: string
-  name: string
-  startTime: Date
-  galaxy: string
-  returns: number
-  plunderbonus: number
-  status: string
-}
 
-// 新增的全局量表接口
-export interface GlobalStats {
-  groupId: string
-  updatedAt: Date
-  rankdate: Date
-}
 
-export interface guess {
-  handle: string
-  name: string
-  itemId: number
-  guessContent: string
-  amount: number
-  wins: number
-  createdAt: Date
-}
 
-export interface damageLogs {
-  id: number
-  handle: string
-  date: Date
-}
+
+
+
+
+
+
+
 
 export interface bossweights {
-  bossId: number
+  groupId: number
   weight: number
   lastSpawn: Date
 }
 
-
-
-
-export interface Roulette {
-  id: number
-  items: string[]
-}
-
-export interface RouletteGroup {
-  id: number
-  name: string
-  items: number[]
-}
 

@@ -1,10 +1,10 @@
 import { Context } from 'koishi'
-import { bossPool } from './boss/boss'
+import { bossPool, bossGroups } from './boss/boss'
 import { Config } from './index'
 import { weaponConfig, modConfig } from './weapons'
 import { SyndicatedItems } from './items'
-import { Spacestationtechnology } from './careersystem/technology'
-import { PKProtection } from './database'
+import { Spacestationtechnology } from './technology'
+
 
 // 带保底的抽奖方法
 export async function gachaWithPity(ctx: Context, handle: string): Promise<boolean> {
@@ -131,68 +131,71 @@ export function createHpBar(current: number, max: number): string {
   return '▰'.repeat(filled) + '▱'.repeat(20 - filled)
 }
 
-// 激活下一个BOSS组（随机版）
-export async function activateNextBossGroup(ctx: Context, currentBossId: number | null = null) {
+// 激活下一个BOSS组（权重版）
+export async function activateNextBossGroup(ctx: Context, currentGroupId: number | null = null) {
   // 1. 获取所有权重记录
   const allWeights = await ctx.database.get('ggcevo_boss_weights', {});
 
-  // 2. 过滤可选项（排除当前BOSS）
+  // 2. 过滤可选项（排除当前BOSS组）
   let candidateWeights = allWeights;
-  if (currentBossId !== null) {
-    candidateWeights = allWeights.filter(w => w.bossId !== currentBossId);
+  if (currentGroupId !== null) {
+    candidateWeights = allWeights.filter(w => w.groupId !== currentGroupId);
   }
 
-  // 5. 计算总权重并执行权重随机选择
+  // 3. 计算总权重并执行权重随机选择
   const totalWeight = candidateWeights.reduce((sum, w) => sum + w.weight, 0);
   let random = Math.random() * totalWeight;
 
-  let selectedBossId: number;
+  let selectedGroupId: number;
   for (const weight of candidateWeights) {
     random -= weight.weight;
     if (random <= 0) {
-      selectedBossId = weight.bossId;
+      selectedGroupId = weight.groupId;
       break;
     }
   }
 
-  // 6. 确保有选择结果（浮点数误差保护）
-  selectedBossId = selectedBossId || candidateWeights[candidateWeights.length - 1].bossId;
+  // 4. 确保有选择结果（浮点数误差保护）
+  selectedGroupId = selectedGroupId || candidateWeights[candidateWeights.length - 1].groupId;
 
-  // 7. 通过ID查找BOSS组配置
-  const nextBossGroup = bossPool.find(g => g.id === selectedBossId);
-  if (!nextBossGroup) {
-    throw new Error(`Boss group ${selectedBossId} not found in bossPool`);
+  // 5. 找到选中的组
+  let selectedGroup = bossGroups.find(group => group.groupId === selectedGroupId);
+  if (!selectedGroup) {
+    // 如果找不到组，默认选择第一个组
+    selectedGroup = bossGroups[0];
   }
 
-  // 创建主BOSS
-  const mainBoss = await ctx.database.create('ggcevo_boss', {
-    name: nextBossGroup.main.name,
-    type: nextBossGroup.main.type,
-    HP: nextBossGroup.main.maxHP,
-    tags: nextBossGroup.main.tags,    // 新增标签字段
-    skills: [...nextBossGroup.main.passive],
-    energy: nextBossGroup.main.maxEnergy,
-    groupId: nextBossGroup.id,
-    isActive: true,
-    respawnTime: new Date()
-  });
+  // 6. 激活该组中的所有BOSS
+  const activatedBosses = [];
+  for (const bossId of selectedGroup.bosses) {
+    // 通过ID查找BOSS配置
+    const bossConfig = bossPool.find(b => b.id === bossId);
+    if (!bossConfig) {
+      throw new Error(`Boss ${bossId} not found in bossPool`);
+    }
 
-  // 创建子代
-  for (const minion of nextBossGroup.minions) {
-    await ctx.database.create('ggcevo_boss', {
-      name: minion.name,
-      type: minion.type,
-      HP: minion.maxHP,
-      tags: minion.tags,             // 新增标签字段
-      skills: [...minion.passive],
-      energy: minion.maxEnergy,
-      groupId: nextBossGroup.id,
+    // 创建BOSS
+    const boss = await ctx.database.create('ggcevo_boss', {
+      name: bossConfig.name,
+      type: bossConfig.type,
+      HP: bossConfig.maxHP,
+      tags: bossConfig.tags,    // 新增标签字段
+      skills: [...bossConfig.passive],
+      energy: bossConfig.maxEnergy,
       isActive: true,
       respawnTime: new Date()
     });
+
+    activatedBosses.push(boss);
   }
 
-  return mainBoss;
+  // 7. 更新选中BOSS组的权重
+  await updateWeights(ctx, selectedGroupId);
+
+  return {
+    group: selectedGroup,
+    bosses: activatedBosses
+  };
 }
 
 // 在武器配置后添加
@@ -203,20 +206,11 @@ for (const key in weaponConfig) {
 
 // 优化后的战斗力计算函数
 export async function calculateTotalPower(ctx: Context, config: Config, handle: string) {
-  // 获取基础积分 (赛季排名)
-  let baseRank = 0
-  if (config.pointBonusEnabled) {
-    const [rankData] = await ctx.database.get('ggcevo_rank', {
-      handle,
-      rankseason: config.rankseason
-    });
-    baseRank = rankData?.rank || 0;
-  }
-
-  let total = baseRank;
+  // 初始战斗力为0
+  let total = 0;
 
   // 获取职业数据
-  const [careerData] = await ctx.database.get('ggcevo_careers', { handle });
+  const [careerData] = await ctx.database.get('ggcevo_sign', { handle });
   const career = careerData?.career;
 
   // 计算职业加成
@@ -269,7 +263,7 @@ export async function applyItemEffect(
 ): Promise<{ success: boolean; message: string }> {
   try {
     // 获取玩家职业信息
-    const [careerData] = await ctx.database.get('ggcevo_careers', { handle });
+    const [careerData] = await ctx.database.get('ggcevo_sign', { handle });
     const playerCareer = careerData?.career;
 
     // 物品名称解析
@@ -279,56 +273,27 @@ export async function applyItemEffect(
 
     // 执行物品专属前置检查
     if (itemConfig.id === 1) { // E-2能量炸弹
-      return {
-        success: false,
-        message: '暂时被禁用了。',
+      // 检查玩家的buff字段是否含有1
+      const [playerStats] = await ctx.database.get('ggcevo_player_stats', { handle });
+      if (playerStats?.buff && playerStats.buff.includes(1)) {
+        return {
+          success: false,
+          message: '您已经拥有E-2能量炸弹效果，无法重复使用。',
+        };
       }
-      const activeSentry = await ctx.database.get('ggcevo_boss', {
-        name: '空间站哨枪塔',
-        isActive: true
-      })
-      if (!activeSentry.length) return {
-        success: false,
-        message: '⚠️ 目标「空间站哨枪塔」未存活',
-      }
-      // E-2能量炸弹效果处理
-      const [SentryTower] = await ctx.database.get('ggcevo_boss', {
-        name: '空间站哨枪塔',
-        isActive: true
-      })
 
-      const damageValue = SentryTower.HP
-
-      // 更新BOSS状态
-      await ctx.database.set('ggcevo_boss',
-        { name: '空间站哨枪塔' },
-        { isActive: false, HP: 0 }
-      )
-
-      // 原子化更新玩家数据
-      await ctx.database.withTransaction(async () => {
-        // 更新金币奖励
-        const signRecords = await ctx.database.get('ggcevo_sign', { handle })
-        await ctx.database.upsert('ggcevo_sign', [{
-          handle,
-          totalRewards: (signRecords[0]?.totalRewards || 0) + damageValue
-        }], ['handle'])
-
-        // 更新伤害记录
-        const [damageRecords] = await ctx.database.get('ggcevo_boss_damage', { handle })
-        await ctx.database.upsert('ggcevo_boss_damage', [{
-          handle,
-          playerName: session.username,
-          totalDamage: (damageRecords?.totalDamage || 0) + damageValue,
-          attackCount: damageRecords?.attackCount || 0,
-          bossGroupId: 4
-        }], ['handle'])
-      })
+      // 给玩家添加buff
+      const currentBuff = playerStats?.buff || [];
+      currentBuff.push(1);
+      await ctx.database.upsert('ggcevo_player_stats', [{
+        handle,
+        buff: currentBuff
+      }], ['handle']);
 
       return {
         success: true,
-        message: `成功引爆${itemName}，对空间站哨枪塔造成${damageValue}点伤害，获得等额金币。`,
-      }
+        message: `成功使用${itemName}，获得「下一次攻击对建筑目标造成1000%的伤害」效果。`,
+      };
     }
 
     if (itemConfig.id === 2) {
@@ -534,22 +499,6 @@ export async function applyItemEffect(
         };
       }
 
-      const [damageRecords] = await ctx.database.get('ggcevo_boss_damage', { handle })
-      if (!damageRecords) {
-        return {
-          success: false,
-          message: `至少攻击一次后才能使用该物品。`,
-        };
-      }
-
-      // 检查目标血量是否低于1000
-      if (targetBoss.HP <= 1000) {
-        return {
-          success: false,
-          message: `目标「${target}」血量已低于1000，无法使用${itemName}。`,
-        };
-      }
-
       // 计算伤害 (破坏者职业加成 + 建筑加成)
       let baseDamage = 100;
 
@@ -562,15 +511,35 @@ export async function applyItemEffect(
       const isBuilding = targetBoss.tags?.includes('建筑');
       const damage = isBuilding ? baseDamage * 3 : baseDamage;
 
-      // 计算实际伤害 (不低于目标当前HP-1，保证至少留1点血)
-      const actualDamage = Math.min(damage, targetBoss.HP - 1);
-      const newHP = targetBoss.HP - actualDamage;
+      // 计算实际伤害 (允许目标血量降低至0)
+      const actualDamage = Math.min(damage, targetBoss.HP);
+      const newHP = Math.max(0, targetBoss.HP - actualDamage);
 
-      // 更新BOSS状态 - 始终保持在至少1点HP
-      await ctx.database.set('ggcevo_boss',
-        { name: target },
-        { HP: newHP }
-      );
+      // 检查目标是否被击败
+      const isDefeated = newHP === 0;
+
+      // 更新BOSS状态
+      if (isDefeated) {
+        // 目标被击败，设置isActive为false
+        await ctx.database.set('ggcevo_boss',
+          { name: target },
+          { HP: 0, isActive: false }
+        );
+
+        // 如果目标是主宰，将所有目标的血量设置为0，isActive设置为false
+        if (targetBoss.type === '主宰') {
+          await ctx.database.set('ggcevo_boss', {}, {
+            HP: 0,
+            isActive: false
+          });
+        }
+      } else {
+        // 目标未被击败，只更新HP
+        await ctx.database.set('ggcevo_boss',
+          { name: target },
+          { HP: newHP }
+        );
+      }
 
       // 更新玩家金币奖励（仅当造成有效伤害时）
       if (actualDamage > 0) {
@@ -583,10 +552,11 @@ export async function applyItemEffect(
           }], ['handle'])
 
           // 更新伤害记录
-          await ctx.database.upsert('ggcevo_boss_damage', [{
+          const [damageRecords] = await ctx.database.get('ggcevo_player_stats', { handle });
+          await ctx.database.upsert('ggcevo_player_stats', [{
             handle,
-            playerName: session.username,
             totalDamage: (damageRecords?.totalDamage || 0) + damage,
+            spaceshipId: damageRecords?.spaceshipId || 0
           }], ['handle'])
         });
       }
@@ -596,12 +566,12 @@ export async function applyItemEffect(
         ? `（破坏者使用爆破物的效果提高50%）`
         : "";
 
-      // 血量低警告
-      const lowHpMsg = newHP === 1 ? "，目标血量已降至1点" : "";
+      // 击败消息
+      const defeatMsg = isDefeated ? `，成功击败目标` : "";
 
       return {
         success: true,
-        message: `成功使用${itemName}，对${isBuilding ? '建筑目标' : '目标'}「${target}」造成${actualDamage}点伤害${lowHpMsg}${careerBonusMsg}`,
+        message: `成功使用${itemName}，对${isBuilding ? '建筑目标' : '目标'}「${target}」造成${actualDamage}点伤害${defeatMsg}${careerBonusMsg}`,
       };
     }
 
@@ -623,8 +593,8 @@ export async function applyItemEffect(
 // 科技升级逻辑
 export async function handleTechUpgrade(ctx: Context, handle: string, target: string) {
   // 阵营验证
-  const [careerData] = await ctx.database.get('ggcevo_careers', { handle })
-  if (!careerData || careerData.group !== '人类联盟') {
+  const [careerData] = await ctx.database.get('ggcevo_sign', { handle })
+  if (!careerData || careerData.faction !== '人类联盟') {
     return '🚫 该功能需要【人类联盟】阵营权限'
   }
 
@@ -693,18 +663,7 @@ export async function handleTechUpgrade(ctx: Context, handle: string, target: st
       handle, techId: tech.techId, level: nextLevel
     }], ['handle', 'techId'])
 
-    // 增加购买权限（如果需要）
-    if (permissionGrantInfo) {
-      // 获取当前权限记录
-      const [permissionRecord] = await ctx.database.get('ggcevo_permissions', { handle })
-      const currentValue = permissionRecord?.[permissionGrantInfo.field] || 0
 
-      // 创建或更新权限记录
-      await ctx.database.upsert('ggcevo_permissions', [{
-        handle,
-        [permissionGrantInfo.field]: currentValue + permissionGrantInfo.amount
-      }], ['handle'])
-    }
   })
 
   // 构建折扣明细部分
@@ -721,17 +680,7 @@ export async function handleTechUpgrade(ctx: Context, handle: string, target: st
     ? `💸 花费金币：${actualCost} (原价${originalCost})`
     : `💸 花费金币：${actualCost}`
 
-  // 权限解锁信息
-  let permissionMessage = []
-  if (permissionGrantInfo) {
-    // 获取当前权限值
-    const [permissionRecord] = await ctx.database.get('ggcevo_permissions', { handle })
-    const newValue = permissionRecord?.[permissionGrantInfo.field] || permissionGrantInfo.amount
 
-    permissionMessage.push(
-      permissionGrantInfo.message,
-    )
-  }
 
   return [
     `✅ ${tech.techname} 升级至 Lv.${nextLevel}`,
@@ -739,7 +688,6 @@ export async function handleTechUpgrade(ctx: Context, handle: string, target: st
     ...discountInfo, // 折扣信息
     `📝 基础效果：${levelData.description}`,
     `💼 职业效果：${levelData.careerBonus}`,
-    ...permissionMessage // 权限解锁信息
   ].filter(Boolean).join('\n')
 }
 
@@ -751,7 +699,7 @@ export async function handleWeaponUpgrade(ctx: Context, handle: string, target: 
   })
 
   // 获取职业信息
-  const [careerData] = await ctx.database.get('ggcevo_careers', { handle })
+  const [careerData] = await ctx.database.get('ggcevo_sign', { handle })
 
   // 状态验证
   if (!equipment) return '❌ 您尚未获得该武器'
@@ -779,7 +727,7 @@ export async function handleWeaponUpgrade(ctx: Context, handle: string, target: 
     discountDetails.push('🔫 枪手职业：10%折扣')
   }
 
-  if (careerData?.group === '人类联盟') {
+  if (careerData?.faction === '人类联盟') {
     const [weaponTech] = await ctx.database.get('ggcevo_tech', { handle, techId: 2 }).catch(() => [{ level: 0 }])
 
     // 计算武器系统折扣
@@ -843,10 +791,10 @@ export async function handleWeaponUpgrade(ctx: Context, handle: string, target: 
       }
     )
     if (activeWish) {
-      await ctx.database.set('ggcevo_wish',
-        { id: activeWish.id }, { isused: true }
-      )
-    }
+        await ctx.database.set('ggcevo_player_stats',
+          { handle }, { wishUsed: true }
+        )
+      }
   })
 
   // ==================== 构建反馈消息 ====================
@@ -877,20 +825,26 @@ export async function handleWeaponUpgrade(ctx: Context, handle: string, target: 
 
 // 公共方法：灵狐升运检查
 async function checkFoxBlessing(ctx: Context, handle: string) {
-  return ctx.database.get('ggcevo_wish', {
-    handle,
-    wishname: '灵狐升运',
-    startTime: { $lte: new Date() },
-    endTime: { $gte: new Date() },
-    isused: false
-  }).then(records => records[0])
+  return ctx.database.get('ggcevo_player_stats', {
+    handle
+  }).then(records => {
+    const playerStats = records[0];
+    const now = new Date();
+    if (playerStats && playerStats.wishname === '灵狐升运' && 
+        playerStats.lastWishDate <= now && 
+        new Date(playerStats.lastWishDate.getTime() + 7 * 24 * 60 * 60 * 1000) >= now && 
+        !playerStats.wishUsed) {
+      return playerStats;
+    }
+    return null;
+  })
 }
 
 export async function generateUpgradePriceList(ctx: Context, handle: string) {
   // 获取职业信息
-  const [careerData] = await ctx.database.get('ggcevo_careers', { handle })
+  const [careerData] = await ctx.database.get('ggcevo_sign', { handle })
   const isGunslinger = careerData?.career === '枪手';
-  const isAlliance = careerData?.group === '人类联盟'; // 检查是否是人类联盟阵营
+  const isAlliance = careerData?.faction === '人类联盟'; // 检查是否是人类联盟阵营
 
   // 初始化折扣信息
   let techLevel = 0;
@@ -1007,7 +961,7 @@ export async function generateUpgradePriceList(ctx: Context, handle: string) {
     // 根据不同阵营显示不同的提示信息
     if (isAlliance) {
       discountNotice.push('💡 提示：升级武器系统科技可获得折扣')
-    } else if (careerData?.group === '辛迪加海盗') {
+    } else if (careerData?.faction === '辛迪加海盗') {
       discountNotice.push('💡 提示：转职为枪手职业可获得折扣')
     } else {
       discountNotice.push('💡 提示：加入人类联盟或辛迪加海盗可获得折扣')
@@ -1069,7 +1023,7 @@ export async function getRankInfo(ctx: Context, config: Config, handle: string) 
 }
 
 // 新增辅助函数：检查保护卡状态
-export function isWithinProtection(protections: PKProtection[]) {
+export function isWithinProtection(protections: any[]) {
   const now = new Date();
   return protections.some(p =>
     p.status === 'active' &&
@@ -1166,9 +1120,9 @@ export function getHalfDayIdentifier(date) {
 
 // 初始化权重表（完全在内存处理）
 export async function initWeights(ctx) {
-  for (let id = 1; id <= 12; id++) {
+  for (const group of bossGroups) {
     await ctx.database.create('ggcevo_boss_weights', {
-      bossId: id,
+      groupId: group.groupId,
       weight: 100,
       lastSpawn: new Date(0) // 设置为遥远的过去
     });
@@ -1182,19 +1136,28 @@ export async function updateWeights(ctx: Context, selectedId: number) {
 
   // 逐条更新权重记录
   for (const weight of allWeights) {
-    if (weight.bossId === selectedId) {
-      // 选中的BOSS权重设为固定值50
-      await ctx.database.set('ggcevo_boss_weights', { bossId: weight.bossId }, {
+    if (weight.groupId === selectedId) {
+      // 选中的BOSS组权重设为固定值50
+      await ctx.database.set('ggcevo_boss_weights', { groupId: weight.groupId }, {
         weight: 50,
         lastSpawn: new Date()
       });
     } else {
-      // 其他BOSS权重增加20%（最高500）
+      // 其他BOSS组权重增加20%（最高500）
       const newWeight = Math.min(500, Math.floor(weight.weight * 1.2));
-      await ctx.database.set('ggcevo_boss_weights', { bossId: weight.bossId }, {
+      await ctx.database.set('ggcevo_boss_weights', { groupId: weight.groupId }, {
         weight: newWeight,
         lastSpawn: weight.lastSpawn
       });
     }
   }
 }
+
+// Buff配置
+export const buffConfig = [
+  {
+    id: 1,
+    name: 'E-2能量炸弹',
+    effects: '下一次攻击对建筑目标造成1000%的伤害'
+  }
+];
