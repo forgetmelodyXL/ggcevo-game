@@ -756,17 +756,17 @@ export function apply(ctx: Context, config: Config) {
               total: 0,
               wins: 0,
               todayCount: 0,
-              lastPK: new Date(0),
+              lastPK: now,
               totalDamage: 0,
               attackCount: 0,
-              lastattackDate: new Date(0),
+              lastattackDate: now,
               wishname: '',
               wishUsed: false,
-              lastWishDate: new Date(0),
-              miningStartTime: new Date(0),
+              lastWishDate: now,
+              miningStartTime: now,
               totalMined: 0,
               spaceshipId: 0,
-              exploreStartTime: new Date(0),
+              exploreStartTime: now,
               galaxy: '',
               exploreSuccessCount: 0,
               plunderBonus: 0,
@@ -2424,7 +2424,8 @@ export function apply(ctx: Context, config: Config) {
         2: 'II',
         3: 'III',
         4: 'IV',
-        5: 'V'
+        5: 'V',
+        6: 'VI'
       };
 
       // === 仅对人类联盟玩家显示武器科技折扣 ===
@@ -2728,7 +2729,8 @@ export function apply(ctx: Context, config: Config) {
         2: 'II',
         3: 'III',
         4: 'IV',
-        5: 'V'
+        5: 'V',
+        6: 'VI'
       };
 
       // 获取武器科技等级
@@ -4221,7 +4223,7 @@ export function apply(ctx: Context, config: Config) {
       const [existing] = await ctx.database.get('ggcevo_sign', { handle });
       if (existing?.faction === '人类联盟' || existing?.faction === '辛迪加海盗') {
         const career = existing.career || '未转职';
-        return `你已经加入${existing.faction}阵营，当前职业：${career}`;
+        return `你已经加入${existing.faction}阵营`;
       }
 
       // 获取金币信息
@@ -4252,8 +4254,6 @@ export function apply(ctx: Context, config: Config) {
           await ctx.database.upsert('ggcevo_sign', [{
             handle,
             faction: '人类联盟',
-            career: '联盟新兵',
-            syndicateCareer: '',
             redcrystal: 0
           }], ['handle']);
 
@@ -4278,14 +4278,11 @@ export function apply(ctx: Context, config: Config) {
           await ctx.database.upsert('ggcevo_sign', [{
             handle,
             faction: '辛迪加海盗',
-            career: '辛迪加炮灰新兵',
-            syndicateCareer: '辛迪加炮灰新兵',
             redcrystal: (existing?.redcrystal || 0) + 5
           }], ['handle']);
         }
 
-        return `花费了${faction === '人类联盟' ? '1000金币' : '2000金币'}成功加入${faction}！${faction === '人类联盟' ? '' : '获得5枚红晶，'}初始职业：${faction === '人类联盟' ? '联盟新兵' : '辛迪加炮灰新兵'
-          }`;
+        return `花费了${faction === '人类联盟' ? '1000金币' : '2000金币'}成功加入${faction}！${faction === '人类联盟' ? '' : '获得5枚红晶，'}`;
       } catch (err) {
         ctx.logger.error('加入阵营失败:', err);
         return '加入阵营时发生错误，请稍后再试';
@@ -4381,6 +4378,13 @@ export function apply(ctx: Context, config: Config) {
       const [careerData] = await ctx.database.get('ggcevo_sign', { handle });
       if (!careerData) return '请先加入阵营后使用转职功能。';
 
+      // 检查当前职业是否在配置中
+      const allProfessions = [...spaceStationCrewConfig, ...syndicatePirateConfig];
+      const currentCareer = careerData.career;
+      const currentSyndicateCareer = careerData.syndicateCareer;
+      const isCurrentCareerValid = allProfessions.some(p => p.professionName === currentCareer);
+      const isCurrentSyndicateCareerValid = allProfessions.some(p => p.professionName === currentSyndicateCareer);
+
       // 无参数时显示一级分类
       if (!profession) {
         return [
@@ -4389,6 +4393,7 @@ export function apply(ctx: Context, config: Config) {
           '使用"转职 辛迪加职业"查看辛迪加海盗可转职职业',
           '使用"转职 职业名称"进行转职',
           '──────────────',
+          `💡 ${!isCurrentCareerValid && !isCurrentSyndicateCareerValid ? '首次转职免费' : '后续转职需要转职券'}`,
           '💡 转职后原有职业效果将被替换'
         ].join('\n');
       }
@@ -4447,23 +4452,46 @@ export function apply(ctx: Context, config: Config) {
         return '您已经是该职业了。';
       }
 
-      // 检查是否已有同类型职业
-      if (humanProfession && careerData.career) {
-        return '您已经拥有人类职业，无法转职成其他人类职业。';
-      }
-      if (syndicateProfession && careerData.syndicateCareer) {
-        return '您已经拥有辛迪加职业，无法转职成其他辛迪加职业。';
+      // 判断是否为首次转职（当前职业不在配置中或为null）
+      const isFirstTransfer = (!isCurrentCareerValid && !currentCareer) || 
+                             (!isCurrentSyndicateCareerValid && !currentSyndicateCareer);
+
+      // 人类转职逻辑：必须加入人类联盟或辛迪加海盗阵营
+      if (humanProfession) {
+        if (careerData.faction !== '人类联盟' && careerData.faction !== '辛迪加海盗') {
+          return '只有已加入阵营的玩家才能进行人类转职。';
+        }
+        
+        // 非首次人类转职需要转职券
+        if (!isFirstTransfer && careerData.career) {
+          const [backpack] = await ctx.database.get('ggcevo_backpack', { handle, itemId: 7 });
+          if (!backpack || backpack.quantity < 1) {
+            return '后续人类转职需要转职券，您没有足够的转职券。';
+          }
+          await ctx.database.set('ggcevo_backpack', { handle, itemId: 7 }, { quantity: backpack.quantity - 1 });
+        }
       }
 
-      // 检查辛迪加职业的阵营要求
-      if (syndicateProfession && careerData.faction !== '辛迪加海盗') {
-        return '只有辛迪加海盗可以转职为该职业。';
+      // 辛迪加转职逻辑：必须加入辛迪加海盗阵营
+      if (syndicateProfession) {
+        if (careerData.faction !== '辛迪加海盗') {
+          return '只有辛迪加海盗可以转职为该职业。';
+        }
+        
+        // 非首次辛迪加转职需要转职券
+        if (!isFirstTransfer && careerData.syndicateCareer) {
+          const [backpack] = await ctx.database.get('ggcevo_backpack', { handle, itemId: 7 });
+          if (!backpack || backpack.quantity < 1) {
+            return '后续辛迪加转职需要转职券，您没有足够的转职券。';
+          }
+          await ctx.database.set('ggcevo_backpack', { handle, itemId: 7 }, { quantity: backpack.quantity - 1 });
+        }
       }
 
       // 二次验证
       await session.send(
         `⚠️ 确认转职为【${profession}】吗？\n` +
-        `💡 提醒：转职成功后，一般情况下无法更改职业！\n` +
+        `💡 提醒：${isFirstTransfer ? '首次转职免费' : '后续转职需要转职券'}，转职成功后，一般情况下无法更改职业！\n` +
         `请在30秒内输入"是"确认转职，或输入其他内容取消。`
       );
 
@@ -4608,13 +4636,14 @@ export function apply(ctx: Context, config: Config) {
 
       const handle = `${profile.regionId}-S2-${profile.realmId}-${profile.profileId}`
 
-      // 阵营验证
-      const [careerData] = await ctx.database.get('ggcevo_sign', { handle })
-      if (!careerData || careerData.faction !== '辛迪加海盗') {
-        return '🚫 该功能需要【辛迪加海盗】阵营权限'
-      }
+      // 检查签到记录是否存在
+      const [signCheck] = await ctx.database.get('ggcevo_sign', { handle });
+      if (!signCheck) return '🔒 您尚未进行签到，请先使用"签到"指令';
 
-      const currentCareer = careerData.career;
+      // 阵营验证（仅用于显示折扣信息，不限制查看）
+      const [careerData] = await ctx.database.get('ggcevo_sign', { handle })
+      const currentCareer = careerData?.career || '';
+      const currentFaction = careerData?.faction || '';
 
       // 合并统计所有类型（按武器配置的 category 分类）
       const categoryStats = {}
@@ -5055,17 +5084,12 @@ export function apply(ctx: Context, config: Config) {
       const [signCheck] = await ctx.database.get('ggcevo_sign', { handle });
       if (!signCheck) return '🔒 您尚未进行签到，请先使用"签到"指令';
 
-      // 阵营验证
-      const [careerData] = await ctx.database.get('ggcevo_sign', { handle })
-      if (!careerData || careerData.faction !== '人类联盟') {
-        return '🚫 该功能需要【人类联盟】阵营权限'
-      }
-
       // 罗马数字转换映射
       const romanNumerals = { 1: 'I', 2: 'II', 3: 'III', 4: 'IV', 5: 'V' };
 
-      // 检查情报副官折扣
-      const isIntelligenceOfficer = careerData?.career === '情报副官'
+      // 检查情报副官折扣（仅人类联盟有效）
+      const [careerData] = await ctx.database.get('ggcevo_sign', { handle });
+      const isIntelligenceOfficer = careerData?.faction === '人类联盟' && careerData?.career === '情报副官';
 
       // 无参数时显示科技列表
       if (!techName) {
@@ -5177,7 +5201,10 @@ export function apply(ctx: Context, config: Config) {
       }
 
       // 开始挖矿或更新记录
-      if (!playerStats?.miningStartTime) {
+      const isNeverMined = !playerStats?.miningStartTime || 
+                          playerStats.miningStartTime.getTime() === 0 || 
+                          playerStats.miningStartTime.getUTCFullYear() === 1970;
+      if (isNeverMined) {
         await ctx.database.upsert('ggcevo_player_stats', [{
           handle,
           miningStartTime: new Date(),

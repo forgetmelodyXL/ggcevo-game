@@ -264,7 +264,22 @@ export async function applyItemEffect(
   try {
     // 获取玩家职业信息
     const [careerData] = await ctx.database.get('ggcevo_sign', { handle });
-    const playerCareer = careerData?.career;
+    if (!careerData) {
+      return {
+        success: false,
+        message: '🔒 您尚未进行签到，请先使用"签到"指令',
+      };
+    }
+    const playerCareer = careerData.career;
+
+    // 检查玩家统计记录是否存在
+    const [playerStats] = await ctx.database.get('ggcevo_player_stats', { handle });
+    if (!playerStats) {
+      return {
+        success: false,
+        message: '🔒 您尚未进行签到，请先使用"签到"指令',
+      };
+    }
 
     // 物品名称解析
     const itemName = Object.entries(SyndicatedItems).find(
@@ -274,8 +289,7 @@ export async function applyItemEffect(
     // 执行物品专属前置检查
     if (itemConfig.id === 1) { // E-2能量炸弹
       // 检查玩家的buff字段是否含有1
-      const [playerStats] = await ctx.database.get('ggcevo_player_stats', { handle });
-      if (playerStats?.buff && playerStats.buff.includes(1)) {
+      if (playerStats.buff && playerStats.buff.includes(1)) {
         return {
           success: false,
           message: '您已经拥有E-2能量炸弹效果，无法重复使用。',
@@ -283,7 +297,7 @@ export async function applyItemEffect(
       }
 
       // 给玩家添加buff
-      const currentBuff = playerStats?.buff || [];
+      const currentBuff = playerStats.buff || [];
       currentBuff.push(1);
       await ctx.database.upsert('ggcevo_player_stats', [{
         handle,
@@ -592,10 +606,10 @@ export async function applyItemEffect(
 
 // 科技升级逻辑
 export async function handleTechUpgrade(ctx: Context, handle: string, target: string) {
-  // 阵营验证
+  // 检查签到记录是否存在
   const [careerData] = await ctx.database.get('ggcevo_sign', { handle })
-  if (!careerData || careerData.faction !== '人类联盟') {
-    return '🚫 该功能需要【人类联盟】阵营权限'
+  if (!careerData) {
+    return '🔒 您尚未进行签到，请先使用"签到"指令'
   }
 
   const tech = Spacestationtechnology.find(t =>

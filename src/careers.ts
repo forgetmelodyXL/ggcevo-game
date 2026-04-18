@@ -55,7 +55,7 @@ export const spaceStationCrewConfig = [
 export const syndicatePirateConfig = [
   {
     professionName: '能量武器专家',
-    effect: '能量武器攻击伤害+20%; 购买MK-4激光步枪(传奇)享有50%的折扣',
+    effect: '能量武器攻击伤害+20%',
     costredcrystal: 30,
   },
   {
@@ -65,17 +65,17 @@ export const syndicatePirateConfig = [
   },
   {
     professionName: '枪手',
-    effect: '武器等级上限为7级; 升级武器享有10%的折扣; 购买M4AE脉冲步枪(传奇)享有50%的折扣',
+    effect: '武器等级上限为7级; 升级武器享有10%的折扣',
     costredcrystal: 40,
   },
   {
     professionName: '猩红杀手',
-    effect: '“侦察步枪”攻击伤害+15%; 使用“侦察步枪”攻击时每1点护甲改为减少0点伤害; 购买DSR-55反器材步枪(传奇)享有50%的折扣',
+    effect: '“侦察步枪”攻击伤害+15%; 使用“侦察步枪”攻击时每1点护甲改为减少0点伤害',
     costredcrystal: 30,
   },
   {
     professionName: '纵火狂',
-    effect: '热能武器攻击伤害+20%; 探索获得莫洛托夫燃烧弹的概率提高20%并且有10%的概率额外获得1个；使用莫洛托夫燃烧弹的效果提高100%；购买龙息霰弹枪(传奇)享有50%的折扣',
+    effect: '热能武器攻击伤害+20%; 探索获得莫洛托夫燃烧弹的概率提高20%并且有10%的概率额外获得1个；使用莫洛托夫燃烧弹的效果提高100%',
     costredcrystal: 30,
   },
   {
@@ -90,22 +90,22 @@ export const syndicatePirateConfig = [
   },
   {
     professionName: '指挥官',
-    effect: '使用红晶升级物品享有50%的折扣；升级物品时有50%的概率获得双倍加成；购买光剑（传奇）享有50%的折扣',
+    effect: '使用红晶升级物品享有50%的折扣；升级物品时有50%的概率获得双倍加成',
     costredcrystal: 30,
   },
   {
     professionName: '装甲兵',
-    effect: '所有武器额外拥有一个改装槽；武器改装任意模块享有10%的折扣；购买外星电浆（传奇）享有50%的折扣',
+    effect: '所有武器额外拥有一个改装槽；武器改装任意模块享有10%的折扣',
     costredcrystal: 40,
   },
   {
     professionName: '破坏者',
-    effect: '黑市订购爆破物类享有50%折扣；探索获得爆破物的概率提高20%并且有10%的概率额外获得1个；使用爆破物的效果提高50%；购买核聚变重炮（传奇）享有50%的折扣',
+    effect: '黑市订购爆破物类享有50%折扣；探索获得爆破物的概率提高20%并且有10%的概率额外获得1个；使用爆破物的效果提高50%',
     costredcrystal: 30,
   },
   {
     professionName: '征募官',
-    effect: '购买DG-3电弧步枪（传奇）享有50%的折扣',
+    effect: '',
     costredcrystal: 20,
   },
 ]
@@ -118,6 +118,15 @@ export async function checkTransferRequirements(ctx: Context, handle: string, pr
   });
 
   const [signData] = await ctx.database.get('ggcevo_sign', { handle });
+  if (!signData) {
+    return { success: false, message: '🔒 您尚未进行签到，请先使用"签到"指令' };
+  }
+  
+  const [playerStats] = await ctx.database.get('ggcevo_player_stats', { handle });
+  if (!playerStats) {
+    return { success: false, message: '🔒 您尚未进行签到，请先使用"签到"指令' };
+  }
+  
   const damageRecords = await ctx.database.get('ggcevo_player_stats', { handle });
 
   const totalAttack = damageRecords.reduce((sum, r) => sum + r.attackCount, 0);
