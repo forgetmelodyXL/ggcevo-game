@@ -847,6 +847,7 @@ export function apply(ctx: Context, config: Config) {
 
       // [4] 权限检查
       const memberInfo = session.event?.member?.roles;
+      //session.send(`调试信息 - 角色列表: ${JSON.stringify(memberInfo)}`);
       if (memberInfo?.some(role => role.name === "member" || role.id === "member")) {
         return "❌ 仅限管理员和群主领取每月津贴。";
       }
