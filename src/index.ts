@@ -742,7 +742,7 @@ export function apply(ctx: Context, config: Config) {
             pityCounter: record?.pityCounter || 0,
             fullPityCount: record?.fullPityCount || 0,
             bigPrizeCount: record?.bigPrizeCount || 0,
-            faction: record?.faction || '人类联盟',
+            faction: record?.faction || '',
             career: record?.career || '',
             redcrystal: (record?.redcrystal || 0) + redCrystal,
             syndicateCareer: record?.syndicateCareer || ''
@@ -4220,7 +4220,8 @@ export function apply(ctx: Context, config: Config) {
       // 检查是否已加入阵营
       const [existing] = await ctx.database.get('ggcevo_sign', { handle });
       if (existing?.faction === '人类联盟' || existing?.faction === '辛迪加海盗') {
-        return `你已经加入${existing.faction}阵营，当前职业：${existing.career}`;
+        const career = existing.career || '未转职';
+        return `你已经加入${existing.faction}阵营，当前职业：${career}`;
       }
 
       // 获取金币信息
@@ -5170,6 +5171,11 @@ export function apply(ctx: Context, config: Config) {
       const [playerStats] = await ctx.database.get('ggcevo_player_stats', { handle });
       const [sign] = await ctx.database.get('ggcevo_sign', { handle });
 
+      // 检查player_stats记录是否存在
+      if (!playerStats) {
+        return '🔒 您尚未进行签到，请先使用"签到"指令';
+      }
+
       // 开始挖矿或更新记录
       if (!playerStats?.miningStartTime) {
         await ctx.database.upsert('ggcevo_player_stats', [{
@@ -5910,6 +5916,19 @@ export function apply(ctx: Context, config: Config) {
       async function handleExploreCompletion() {
         const returnsIncrement = (playerStats.exploreSuccessCount || 0) + 1;
         const galaxyData = galaxy[playerStats.galaxy];
+
+        // 检查星系数据是否存在
+        if (!galaxyData) {
+          // 重置探索状态
+          await ctx.database.upsert('ggcevo_player_stats', [{
+            handle,
+            exploreStartTime: null,
+            galaxy: null,
+            exploreSuccessCount: playerStats.exploreSuccessCount || 0,
+            plunderBonus: 0
+          }], ['handle']);
+          return '🪐 探索过程中出现错误，请重新选择星系进行探索。';
+        }
 
         // 计算实际成功率
         let successRate = galaxyData.success;

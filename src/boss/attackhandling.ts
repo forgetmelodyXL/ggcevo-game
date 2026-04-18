@@ -256,8 +256,21 @@ export async function handleAttack(
         }
     }
 
-    const [currentboss] = await ctx.database.get('ggcevo_boss', { name: targetBoss.name });
-    const currentHP = currentboss.HP;
+    // 检查是否为测试假人
+    const isTestDummy = targetBoss.testTag || false;
+    let currentHP;
+    
+    if (isTestDummy) {
+        // 对于测试假人，直接使用传入的HP值
+        currentHP = targetBoss.HP;
+    } else {
+        // 对于真实BOSS，从数据库获取最新HP
+        const [currentboss] = await ctx.database.get('ggcevo_boss', { name: targetBoss.name });
+        if (!currentboss) {
+            throw new Error(`BOSS ${targetBoss.name} 不存在于数据库中`);
+        }
+        currentHP = currentboss.HP;
+    }
 
     // 最终是否被击败
     const isDefeated = currentHP <= 0;
