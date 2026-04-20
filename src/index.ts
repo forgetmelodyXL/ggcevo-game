@@ -275,72 +275,6 @@ export function apply(ctx: Context, config: Config) {
     primary: ['handle', 'taskId'],
   })
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
   ctx.command('ggcevo/抽奖')
     .action(async (argv) => {
       const session = argv.session;
@@ -514,15 +448,15 @@ export function apply(ctx: Context, config: Config) {
 
       // 构建背包信息
       let backpackInfo = `【${session.username}的背包】\n`;
-      
+
       // 添加金币数量
       backpackInfo += `💰 金币：${record.totalRewards}\n`;
-      
+
       // 添加红晶数量（仅当阵营为辛迪加海盗时）
       if (record.faction === '辛迪加海盗') {
         backpackInfo += `💎 红晶：${record.redcrystal || 0}\n`;
       }
-      
+
       // 添加物品列表
       if (validItems.length > 0) {
         backpackInfo += `\n物品：\n${itemDetails.join('\n')}`;
@@ -655,28 +589,10 @@ export function apply(ctx: Context, config: Config) {
         // 获取职业信息
         const [careerData] = await ctx.database.get('ggcevo_sign', { handle });
 
-        // 获取关键系统固件科技等级
-        let tech5Bonus = 0;
-        if (careerData &&
-          careerData.faction === '人类联盟' &&
-          (careerData.career === '舰长' || careerData.career === '情报副官')) {
-          const [tech5Data] = await ctx.database.get('ggcevo_tech', {
-            handle,
-            techId: 5,
-            level: 5
-          });
-          if (tech5Data) {
-            tech5Bonus = 1.0; // 100%加成
-            messages.push('🔧 关键系统固件科技LV.5：+100%金币');
-          }
-        }
-
         // 人类联盟基础加成
         if (careerData?.faction === '人类联盟') {
-          totalBonus += 0.5 + tech5Bonus;
+          totalBonus += 0.5;
           messages.push(`🏛️ 人类联盟阵营：+50%金币`);
-        } else {
-          totalBonus += tech5Bonus;
         }
 
         // 辛迪加海盗加成
@@ -688,6 +604,7 @@ export function apply(ctx: Context, config: Config) {
             const totalBonusPercent = Math.round(credBonus * 100);
             messages.push(`💎 CRED-17生效：+${totalBonusPercent}%金币`);
           }
+          
         }
 
         // 计算基础加成后的金币和咕咕币
@@ -698,10 +615,10 @@ export function apply(ctx: Context, config: Config) {
         const [playerStats] = await ctx.database.get('ggcevo_player_stats', {
           handle
         });
-        const meowEffect = playerStats && playerStats.wishname === '喵喵财源' && 
-                          playerStats.lastWishDate <= now && 
-                          new Date(playerStats.lastWishDate.getTime() + 7 * 24 * 60 * 60 * 1000) >= now && 
-                          !playerStats.wishUsed ? playerStats : null;
+        const meowEffect = playerStats && playerStats.wishname === '喵喵财源' &&
+          playerStats.lastWishDate <= now &&
+          new Date(playerStats.lastWishDate.getTime() + 7 * 24 * 60 * 60 * 1000) >= now &&
+          !playerStats.wishUsed ? playerStats : null;
 
         let multiplier = 1.0;
         if (meowEffect) {
@@ -715,9 +632,15 @@ export function apply(ctx: Context, config: Config) {
 
         // 红晶奖励处理（不受游戏记录影响）
         let redCrystal = 0;
-        if (careerData?.faction === '辛迪加海盗' && careerData.career === '辛迪加财务经理') {
-          redCrystal = 5;
-          messages.push('🎖️ 辛迪加财务经理职业：+5枚红晶');
+        if (careerData?.faction === '辛迪加海盗') {
+          redCrystal = 3;
+          messages.push('💎 辛迪加海盗阵营：+3枚红晶');
+          
+          // 辛迪加财务经理额外红晶
+          if (careerData?.career === '辛迪加财务经理') {
+            redCrystal += 3;
+            messages.push('🎖️ 辛迪加财务经理职业：额外+3枚红晶');
+          }
         }
 
         // 计算 HP 上限
@@ -766,8 +689,8 @@ export function apply(ctx: Context, config: Config) {
               miningStartTime: now,
               totalMined: 0,
               spaceshipId: 0,
-              exploreStartTime: now,
-              galaxy: '',
+              exploreStartTime: null,
+              galaxy: null,
               exploreSuccessCount: 0,
               plunderBonus: 0,
               totalExploreGold: 0,
@@ -1922,13 +1845,7 @@ export function apply(ctx: Context, config: Config) {
           handle: targetHandle
         });
 
-        // ================== 计算机专家特权：增加每日PK次数 ==================
         let dailyPKLimit = config.dailyPKLimit;
-
-        // 计算机专家每日主动PK次数增加3次
-        if (initiatorCareer?.career === '计算机专家') {
-          dailyPKLimit += 3; // 增加次数上限
-        }
 
         // ================== 新增点1：检查双方阵营 ==================
         const validGroups = new Set(['人类联盟', '辛迪加海盗']);
@@ -2071,9 +1988,12 @@ export function apply(ctx: Context, config: Config) {
         let winRate = 50 + (powerDiff / 100) * 0.1;
         winRate = Math.min(Math.max(winRate, 5), 95);
 
-        // 计算机专家特权：胜率提高10%
+        // 计算机专家特权：胜率提高10%（主动和被动都生效）
         if (initiatorCareer?.career === '计算机专家') {
-          winRate += 10; // 增加10个百分点
+          winRate += 10;
+        }
+        if (targetCareer?.career === '计算机专家') {
+          winRate -= 10;
         }
 
         winRate = Math.min(Math.max(winRate, 5), 100);
@@ -2100,7 +2020,7 @@ export function apply(ctx: Context, config: Config) {
         // ================== 新增点4：修改金币计算规则 ==================
         // 按照新规则计算金币掠夺
         let baseAmount = 0;
-        
+
         if (isWin) {
           // 发起者胜利
           if (initiatorGold > targetGold) {
@@ -2120,7 +2040,7 @@ export function apply(ctx: Context, config: Config) {
             baseAmount = Math.floor(targetGold * 1 / 100);
           }
         }
-        
+
         // 每次PK金币最多掠夺200金币
         let goldTransfer = Math.min(baseAmount, 200);
 
@@ -2132,17 +2052,7 @@ export function apply(ctx: Context, config: Config) {
           goldTransfer = reducedGold;                          // 实际转移金币
         }
 
-        // ================== 计算机专家被动保护（在结果处理前） ==================
-        let computerExpertProtection = false;
 
-        // 当应战者是计算机专家且PK失败时
-        if (isWin && targetCareer?.career === '计算机专家') {
-          // 50%概率触发金币保护
-          if (Math.random() < 0.5) {
-            //computerExpertProtection = true;
-            //goldTransfer = 0;
-          }
-        }
 
         // ================== 气喇叭效果处理 ==================
         let hornEffect = false;
@@ -2195,83 +2105,43 @@ export function apply(ctx: Context, config: Config) {
             date: new Date()
           })
 
-          // ================== 新增点4：财务经理职业奖励 ==================
-          let extraRedCrystal = 0;
-          // 主动PK且获胜
-          if (isWin && initiatorCareer?.career === '辛迪加财务经理') {
-            //extraRedCrystal = 1;
-          }
-
-          // ================== 修改点：合并红晶奖励 ==================
-          let redcrystalAdd = 0;
-          // 辛迪加海盗基础奖励
-          if (initiatorCareer?.faction === '辛迪加海盗') {
-            redcrystalAdd += 1;
-          }
-          // 财务经理额外奖励
-          redcrystalAdd += extraRedCrystal;
-
-          // 如果有红晶奖励
-          if (redcrystalAdd > 0) {
-            await ctx.database.upsert('ggcevo_sign', [{
-              handle: initiatorHandle,
-              redcrystal: (initiatorCareer?.redcrystal || 0) + redcrystalAdd,
-              faction: initiatorCareer?.faction || '',
-              career: initiatorCareer?.career || '',
-              syndicateCareer: initiatorCareer?.syndicateCareer || ''
-            }], ['handle']);
-          }
-
-
-
-          // ================== 修正的金币转移逻辑 ==================
-          if (computerExpertProtection) {
-            // 计算机专家保护生效时，双方金币都不变动
-            // 不触发气喇叭效果
+          // 常规金币转移逻辑
+          if (isWin) {
+            await ctx.database.set('ggcevo_sign', targetHandle, {
+              totalRewards: targetGold - goldTransfer
+            });
+            await ctx.database.set('ggcevo_sign', initiatorHandle, {
+              totalRewards: initiatorGold + goldTransfer
+            });
           } else {
-            // 常规金币转移逻辑
-            if (isWin) {
-              await ctx.database.set('ggcevo_sign', targetHandle, {
-                totalRewards: targetGold - goldTransfer
-              });
-              await ctx.database.set('ggcevo_sign', initiatorHandle, {
-                totalRewards: initiatorGold + goldTransfer
-              });
-            } else {
-              await ctx.database.set('ggcevo_sign', initiatorHandle, {
-                totalRewards: initiatorGold - goldTransfer
-              });
-              await ctx.database.set('ggcevo_sign', targetHandle, {
-                totalRewards: targetGold + goldTransfer
-              });
-            }
-            
-            // 气喇叭生效时，额外白送金币（不是从失败者掠夺）
-            if (hornEffect) {
-              await ctx.database.set('ggcevo_sign', winnerHandle, {
-                totalRewards: (isWin ? initiatorGold + goldTransfer : targetGold + goldTransfer) + extraGold
-              });
-            }
+            await ctx.database.set('ggcevo_sign', initiatorHandle, {
+              totalRewards: initiatorGold - goldTransfer
+            });
+            await ctx.database.set('ggcevo_sign', targetHandle, {
+              totalRewards: targetGold + goldTransfer
+            });
           }
 
+          // 气喇叭生效时，额外白送金币（不是从失败者掠夺）
+          if (hornEffect) {
+            await ctx.database.set('ggcevo_sign', winnerHandle, {
+              totalRewards: (isWin ? initiatorGold + goldTransfer : targetGold + goldTransfer) + extraGold
+            });
+          }
 
         });
 
-        // ================== 构建战报（添加职业效果） ==================
+        // ================== 构建战报 ==================
         const result = [
           `⚔️【对战结果】${isWin ? '胜利' : '失败'}`,
           `🏅 挑战者：${initiatorRankname}(战斗力 ${initiatorPower})`,
-          `💼 职业：${initiatorCareer?.career || '无'}`,
           `🛡️ 应战者：${targetRankname}(战斗力 ${targetPower})`,
-          `💼 职业：${targetCareer?.career || '无'}`,
           `📊 胜率预测：${winRate.toFixed(1)}%`,
           `🎰 金币变动：1%`
         ];
 
         // 添加金币变动说明
-        if (computerExpertProtection) {
-          result.push(`💻 计算机专家职业：应战者PK失败时不损失金币`);
-        } else if (isWin) {
+        if (isWin) {
           result.push(`💰 您从对方的口袋里抢夺了${goldTransfer}枚金币`);
         } else {
           result.push(`💸 您从口袋里拿出了${goldTransfer}枚金币上交给对方`);
@@ -2280,19 +2150,9 @@ export function apply(ctx: Context, config: Config) {
         // 收集所有加成效果消息
         const bonusEffects = [];
 
-        // ================== 计算机专家专属提示 ==================
-        if (initiatorCareer?.career === '计算机专家') {
-          const usedCount = initiatorPK.todayCount + 1;
-          bonusEffects.push(
-            `▸ 💻 计算机专家特权：`,
-            `   - 主动PK胜率+10%（最高可至100%）`,
-            `   - 每日挑战次数+3`
-          );
-        }
-
-        // 添加人类联盟保护信息
-        if (targetCareer.faction === '人类联盟' && isWin) {
-          bonusEffects.push(`▸ 🛡️ 人类联盟：应战者PK失败时仅损失1%的金币`);
+        // 计算机专家特权提示
+        if (targetCareer?.career === '计算机专家') {
+          bonusEffects.push(`▸ 💻 对方为计算机专家：对方胜率+10%`);
         }
 
         // 显示MP3效果提示
@@ -2303,14 +2163,6 @@ export function apply(ctx: Context, config: Config) {
         // 添加气喇叭效果提示
         if (hornEffect) {
           bonusEffects.push(`▸ 📯 气喇叭生效：辛迪加海盗总部为胜利者发放了额外${extraGold}金币奖励！`);
-        }
-
-        // 红晶奖励提示
-        if (initiatorCareer?.faction === '辛迪加海盗') {
-          bonusEffects.push(`▸ 🔴 辛迪加海盗阵营：+1枚红晶`);
-        }
-        if (isWin && initiatorCareer?.career === '辛迪加财务经理') {
-          //bonusEffects.push(`▸ 🎖️ 辛迪加财务经理职业：+1枚红晶`);
         }
 
         // 只在有加成效果时显示标题和内容
@@ -2428,18 +2280,20 @@ export function apply(ctx: Context, config: Config) {
         6: 'VI'
       };
 
-      // === 仅对人类联盟玩家显示武器科技折扣 ===
+      // === 仅对人类联盟玩家显示武器科技权限和折扣 ===
       if (playerGroup === '人类联盟' && techLevel > 0 && techConfigData) {
         const isCareer = techConfigData.careerNames.includes(playerCareer);
-        const totalDiscount = isCareer ? 50 : 25;
-
+        
         const applicableLevels = [];
         for (let level = 1; level <= techLevel; level++) {
           applicableLevels.push(romanLevels[level]);
         }
         const levelRange = applicableLevels.join('、');
 
-        discountDetails.push(`▸ 🔧 武器系统Lv${techLevel}: ${totalDiscount}%折扣 (适用${levelRange}类武器)`);
+        discountDetails.push(`▸ 🔧 武器系统Lv${techLevel}: 解锁${levelRange}类武器购买权限`);
+        if (isCareer) {
+          discountDetails.push(`▸ 💼 职业加成(武器中士/情报副官): 购买享有25%折扣`);
+        }
       }
       // === 非人类联盟玩家不显示任何科技折扣信息 ===
 
@@ -2448,10 +2302,10 @@ export function apply(ctx: Context, config: Config) {
         handle
       });
       const now = new Date();
-      const activeWish = playerStats && playerStats.wishname === '蚱蜢优购' && 
-                        playerStats.lastWishDate <= now && 
-                        new Date(playerStats.lastWishDate.getTime() + 7 * 24 * 60 * 60 * 1000) >= now && 
-                        !playerStats.wishUsed ? playerStats : null;
+      const activeWish = playerStats && playerStats.wishname === '蚱蜢优购' &&
+        playerStats.lastWishDate <= now &&
+        new Date(playerStats.lastWishDate.getTime() + 7 * 24 * 60 * 60 * 1000) >= now &&
+        !playerStats.wishUsed ? playerStats : null;
 
       if (activeWish) {
         discountDetails.push(`▸ 🦗 蚱蜢优购祈愿：20%折扣`);
@@ -2491,22 +2345,13 @@ export function apply(ctx: Context, config: Config) {
 
       // 定义各类武器应用的折扣率
       const getWeaponDiscount = (configLevel) => {
-        // 基础折扣参数
-        const BASE_DISCOUNT = 25;
         const CAREER_DISCOUNT = 25;
         const GRASSHOPPER_DISCOUNT = 20;
 
         let applicableDiscount = 0;
         const discountSources = [];
 
-        // 应用正常折扣规则
-        // === 仅对人类联盟玩家应用科技折扣 ===
-        if (playerGroup === '人类联盟' && techLevel > 0 && configLevel <= techLevel) {
-          applicableDiscount += BASE_DISCOUNT;
-          discountSources.push(`科技${BASE_DISCOUNT}%`);
-        }
-
-        // === 仅对人类联盟玩家应用职业加成 ===
+        // === 仅对人类联盟玩家应用职业加成折扣 ===
         if (playerGroup === '人类联盟' &&
           techConfigData?.careerNames.includes(playerCareer) &&
           techLevel > 0 &&
@@ -2695,7 +2540,7 @@ export function apply(ctx: Context, config: Config) {
       // 类型判断
       const isWeapon = ['能量武器', '热能武器', '实弹武器'].includes(itemconfig.category)
       const isLegendaryWeapon = itemconfig.category === '传奇武器'
-      
+
       // 禁止购买传奇武器
       if (isLegendaryWeapon) {
         return '❌ 传奇武器无法直接购买。'
@@ -2716,7 +2561,16 @@ export function apply(ctx: Context, config: Config) {
       const playerGroup = careerData?.faction || ''
       const playerCareer = careerData?.career || ''
 
-
+      // === 人类联盟玩家武器购买权限检查 ===
+      if (isWeapon && playerGroup === '人类联盟') {
+        const [weaponTech] = await ctx.database.get('ggcevo_tech', { handle, techId: 2 });
+        const techLevel = weaponTech?.level || 0;
+        
+        if (itemconfig.level > techLevel) {
+          const romanLevels = { 1: 'I', 2: 'II', 3: 'III', 4: 'IV', 5: 'V', 6: 'VI' };
+          return `❌ 购买${romanLevels[itemconfig.level]}类武器需要武器系统科技等级达到${itemconfig.level}级。\n当前武器系统等级：${techLevel}级`;
+        }
+      }
 
       // ================= 折扣计算系统 =================
       let totalDiscount = 0
@@ -2740,19 +2594,15 @@ export function apply(ctx: Context, config: Config) {
       // 从配置中获取武器系统数据
       const techConfigData = Spacestationtechnology.find(tech => tech.techId === 2);
 
-      // 1. 科技折扣（仅对非传奇武器且人类联盟阵营生效）
+      // 1. 职业加成折扣（仅对非传奇武器、人类联盟阵营、指定职业生效）
       if (!isLegendaryWeapon && playerGroup === '人类联盟' && techLevel > 0 && techConfigData) {
-        // 确定武器是否有资格应用科技折扣
         if (itemconfig.level && itemconfig.level <= techLevel) {
           const isCareerBonus = techConfigData.careerNames.includes(playerCareer);
 
-          // 计算科技基础折扣
-          totalDiscount += 25;
-          discountDetails.push(`▸ 🔧 武器系统Lv${techLevel}: ${isCareerBonus ? '50%' : '25%'}折扣 (适用${romanLevels[itemconfig.level]}类武器)`);
-
-          // 职业加成折扣（仅科技适用的职业）
+          // 只有职业是武器中士或情报副官时才享有25%折扣
           if (isCareerBonus) {
             totalDiscount += 25;
+            discountDetails.push(`▸ 💼 职业加成(武器中士/情报副官): 25%折扣`);
           }
         }
       }
@@ -2763,10 +2613,10 @@ export function apply(ctx: Context, config: Config) {
           handle
         });
         const now = new Date();
-        activeWish = playerStats && playerStats.wishname === '蚱蜢优购' && 
-                    playerStats.lastWishDate <= now && 
-                    new Date(playerStats.lastWishDate.getTime() + 7 * 24 * 60 * 60 * 1000) >= now && 
-                    !playerStats.wishUsed ? playerStats : null;
+        activeWish = playerStats && playerStats.wishname === '蚱蜢优购' &&
+          playerStats.lastWishDate <= now &&
+          new Date(playerStats.lastWishDate.getTime() + 7 * 24 * 60 * 60 * 1000) >= now &&
+          !playerStats.wishUsed ? playerStats : null;
 
         if (activeWish) {
           totalDiscount += 20
@@ -3090,9 +2940,6 @@ export function apply(ctx: Context, config: Config) {
       const techLevel = techData?.level || 0
       const isCareerMatch = ['武器中士', '情报副官'].includes(careerData?.career)
 
-      // 判断是否为装甲兵(辛迪加海盗)
-      const isArmoredPirate = careerData?.career === '装甲兵' && careerData?.faction === '辛迪加海盗'
-
       // 折扣计算函数
       const calculateDiscountRate = (isExclusive) => {
         // 通用折扣计算
@@ -3109,11 +2956,6 @@ export function apply(ctx: Context, config: Config) {
               discount = Math.max(5, isCareerMatch ? 10 : 0);
             }
           }
-        }
-
-        // 装甲兵+辛迪加海盗的固定10%折扣
-        if (isArmoredPirate) {
-          discount += 10;
         }
 
         return Math.min(discount, 100);
@@ -3154,12 +2996,9 @@ export function apply(ctx: Context, config: Config) {
           if (hasExclusive) return '❌ 每个武器只能安装一个专属模块。'
         }
 
-        // 装甲兵海盗的槽位+1加成
-        const actualSlots = equipment.modificationSlots + (isArmoredPirate ? 1 : 0)
-
-        // 槽位检查（使用实际槽位）
-        if (equipment.installedMods.length >= actualSlots) {
-          return `❌ 当前可用改装槽已满(武器升级至3/6级会额外获得一个改装槽${isArmoredPirate ? '，装甲兵职业额外获得一个改装槽' : ''})。`
+        // 槽位检查
+        if (equipment.installedMods.length >= equipment.modificationSlots) {
+          return `❌ 当前可用改装槽已满(武器升级至3/6级会额外获得一个改装槽)。`
         }
 
         // 重复安装检查
@@ -3200,16 +3039,13 @@ export function apply(ctx: Context, config: Config) {
               discountMessages.push(`▸ ⚙️ 武器升级平台Lv.${techLevel}：${isCareerMatch ? 10 : 5}%折扣`);
             }
           }
-          if (isArmoredPirate) {
-            discountMessages.push('▸ 🔰 装甲兵职业：10%折扣');
-          }
         }
 
         return [
           `✅ ${weapon} 成功安装 ${mod}！`,
           `花费金币：${actualCost}${discountRate > 0 ? ` (原价${modInfo.cost})` : ''}`,
           discountMessages.length > 0 && discountMessages.join('\n'),
-          `改装槽：${equipment.installedMods.length + 1}/${actualSlots} ${isArmoredPirate ? '(装甲兵职业额外获得一个改装槽)' : ''}`
+          `改装槽：${equipment.installedMods.length + 1}/${equipment.modificationSlots}`
         ].filter(Boolean).join('\n')
       }
 
@@ -3261,38 +3097,24 @@ export function apply(ctx: Context, config: Config) {
             }).join('\n')
             : '❌ 该武器没有可用的专属模块'
 
-          // 装甲兵海盗的专属模块提示
-          const armorMessage = isArmoredPirate
-            ? '🔰 装甲兵职业：\n▸ 武器改装槽+1'
-            : '';
-
           return [
             `🛠️ ${weapon} 专属模块 🛠️`,
             '使用「改装武器 武器名称 模块名称」安装',
             '※ 每个武器只能安装一个专属模块',
-            armorMessage,
             exclusiveDiscountRate > 0 && `💰 当前专属模块折扣：`,
             exclusiveDiscountRate > 0 && careerData?.faction === '人类联盟' && techLevel >= 2 && `▸ ⚙️ 武器升级平台Lv.${techLevel}：${exclusiveDiscountRate}%折扣`,
-            exclusiveDiscountRate > 0 && isArmoredPirate && '▸ 🔰 装甲兵职业：10%折扣',
             '====================',
             exclusiveList
           ].filter(Boolean).join('\n')
         }
         // 没有指定武器或无效武器名称时
         else {
-          // 装甲兵海盗的通用模块提示
-          const armorMessage = isArmoredPirate
-            ? '🔰 装甲兵职业：\n▸ 武器改装槽+1'
-            : '';
-
           return [
             '🛠️ 通用武器模块 🛠️',
             '使用「改装武器 武器名称 模块名称」安装通用模块',
             '※ 使用「改装武器 武器名称」查询武器专属模块',
-            armorMessage,
             universalDiscountRate > 0 && `💰 当前通用模块折扣：`,
             universalDiscountRate > 0 && careerData?.faction === '人类联盟' && techLevel >= 1 && `▸ ⚙️ 武器升级平台Lv.${techLevel}：${universalDiscountRate}%折扣`,
-            universalDiscountRate > 0 && isArmoredPirate && '▸ 🔰 装甲兵职业：10%折扣',
             '====================',
             buildModList(false)
           ].filter(Boolean).join('\n')
@@ -3408,7 +3230,6 @@ export function apply(ctx: Context, config: Config) {
     .action(async (argv, bossName) => {
       const session = argv.session;
       let bossEventBroadcast: string[] | string = null;
-      let cleanerRewardBroadcast: string[] | null = null;
 
       const isDirect = session.isDirect
       if (!isDirect) {
@@ -3526,7 +3347,6 @@ export function apply(ctx: Context, config: Config) {
 
       const deathResults = await handleDeathTargets(ctx, allDeadTargets, session.username, handle);
       bossEventBroadcast = deathResults.bossBroadcast;
-      cleanerRewardBroadcast = deathResults.cleanerBroadcast;
 
       // ======================= 奖励系统 =======================
 
@@ -3610,7 +3430,6 @@ export function apply(ctx: Context, config: Config) {
       await handleBroadcasts(
         ctx, groupId,
         bossEventBroadcast,
-        cleanerRewardBroadcast,
       );
     });
 
@@ -3798,7 +3617,7 @@ export function apply(ctx: Context, config: Config) {
 
       // 获取所有玩家的伤害记录
       const allRecords = await ctx.database.get('ggcevo_player_stats', {}, { sort: { totalDamage: 'desc' } });
-      
+
       // 过滤出有伤害记录的玩家
       const filteredRecords = allRecords.filter(record => record.totalDamage > 0);
       const total = filteredRecords.length;
@@ -4282,7 +4101,7 @@ export function apply(ctx: Context, config: Config) {
           }], ['handle']);
         }
 
-        return `花费了${faction === '人类联盟' ? '1000金币' : '2000金币'}成功加入${faction}！${faction === '人类联盟' ? '' : '获得5枚红晶，'}`;
+        return `花费了${faction === '人类联盟' ? '1000金币' : '2000金币'}成功加入${faction}！${faction === '人类联盟' ? '' : '获得5枚红晶，'}人类联盟阵营可以转职人类职业，辛迪加海盗阵营可同时拥有人类职业和辛迪加职业`;
       } catch (err) {
         ctx.logger.error('加入阵营失败:', err);
         return '加入阵营时发生错误，请稍后再试';
@@ -4361,45 +4180,23 @@ export function apply(ctx: Context, config: Config) {
       }
     });
 
-  ctx.command('ggcevo/转职 [profession]', '转职系统')
-    .action(async ({ session }, profession) => {
-
-      const Curfew = fixedCurfewCheck(session, config)
-      if (!Curfew) return '⛔ 宵禁时段 (18:00-24:00) 禁止在群聊中使用咕咕之战指令。\n请添加C.O.R.E为好友使用私聊指令，好友验证信息为【咕咕之战】。'
-
-      // 获取用户绑定信息
-      const [profile] = await ctx.database.get('sc2arcade_player', { userId: session.userId, isActive: true });
-      if (!profile) return '🔒 需要先绑定游戏句柄。';
-
-      // 构建唯一句柄
-      const handle = `${profile.regionId}-S2-${profile.realmId}-${profile.profileId}`;
-
-      // 获取当前阵营信息
-      const [careerData] = await ctx.database.get('ggcevo_sign', { handle });
-      if (!careerData) return '请先加入阵营后使用转职功能。';
-
-      // 检查当前职业是否在配置中
-      const allProfessions = [...spaceStationCrewConfig, ...syndicatePirateConfig];
-      const currentCareer = careerData.career;
-      const currentSyndicateCareer = careerData.syndicateCareer;
-      const isCurrentCareerValid = allProfessions.some(p => p.professionName === currentCareer);
-      const isCurrentSyndicateCareerValid = allProfessions.some(p => p.professionName === currentSyndicateCareer);
-
+  ctx.command('ggcevo/职业 [type]', '职业查询')
+    .action(async ({ session }, type) => {
       // 无参数时显示一级分类
-      if (!profession) {
+      if (!type) {
         return [
           '🎖️ 职业分类',
-          '使用"转职 人类职业"查看人类联盟可转职职业',
-          '使用"转职 辛迪加职业"查看辛迪加海盗可转职职业',
+          '使用"职业 人类职业"查看人类联盟可转职职业',
+          '使用"职业 辛迪加职业"查看辛迪加海盗可转职职业',
           '使用"转职 职业名称"进行转职',
           '──────────────',
-          `💡 ${!isCurrentCareerValid && !isCurrentSyndicateCareerValid ? '首次转职免费' : '后续转职需要转职券'}`,
-          '💡 转职后原有职业效果将被替换'
+          '💡 人类联盟阵营可以转职人类职业',
+          '💡 辛迪加海盗阵营可同时拥有人类职业和辛迪加职业'
         ].join('\n');
       }
 
       // 如果参数是"人类职业"，显示所有可转职的人类职业
-      if (profession === '人类职业') {
+      if (type === '人类职业') {
         const careerList = spaceStationCrewConfig.map(p => {
           const info = [
             `🛠️ ${p.professionName}`,
@@ -4419,7 +4216,7 @@ export function apply(ctx: Context, config: Config) {
       }
 
       // 如果参数是"辛迪加职业"，显示所有可转职的辛迪加职业
-      if (profession === '辛迪加职业') {
+      if (type === '辛迪加职业') {
         const careerList = syndicatePirateConfig.map(p => {
           const info = [
             `🛠️ ${p.professionName}`,
@@ -4438,6 +4235,47 @@ export function apply(ctx: Context, config: Config) {
         ].join('\n');
       }
 
+      return `未知的职业类型：${type}\n使用"职业"查看职业分类`;
+    });
+
+  ctx.command('ggcevo/转职 [profession]', '转职系统')
+    .action(async ({ session }, profession) => {
+
+      const Curfew = fixedCurfewCheck(session, config)
+      if (!Curfew) return '⛔ 宵禁时段 (18:00-24:00) 禁止在群聊中使用咕咕之战指令。\n请添加C.O.R.E为好友使用私聊指令，好友验证信息为【咕咕之战】。'
+
+      // 不带参数时显示帮助信息
+      if (!profession) {
+        return [
+          '🎖️ 转职指令使用帮助',
+          '使用"转职 职业名称"进行转职',
+          '──────────────',
+          '💡 先使用"职业"指令查询可转职的职业列表',
+          '💡 "职业 人类职业" - 查看人类联盟职业',
+          '💡 "职业 辛迪加职业" - 查看辛迪加海盗职业',
+          '──────────────',
+          '💡 首次转职免费，后续转职需要转职券'
+        ].join('\n');
+      }
+
+      // 获取用户绑定信息
+      const [profile] = await ctx.database.get('sc2arcade_player', { userId: session.userId, isActive: true });
+      if (!profile) return '🔒 需要先绑定游戏句柄。';
+
+      // 构建唯一句柄
+      const handle = `${profile.regionId}-S2-${profile.realmId}-${profile.profileId}`;
+
+      // 获取当前阵营信息
+      const [careerData] = await ctx.database.get('ggcevo_sign', { handle });
+      if (!careerData) return '请先加入阵营后使用转职功能。';
+
+      // 检查当前职业是否在配置中
+      const allProfessions = [...spaceStationCrewConfig, ...syndicatePirateConfig];
+      const currentCareer = careerData.career;
+      const currentSyndicateCareer = careerData.syndicateCareer;
+      const isCurrentCareerValid = allProfessions.some(p => p.professionName === currentCareer);
+      const isCurrentSyndicateCareerValid = allProfessions.some(p => p.professionName === currentSyndicateCareer);
+
       // 以下是转职逻辑
       // 检查是否是人类职业
       const humanProfession = spaceStationCrewConfig.find(p => p.professionName === profession);
@@ -4452,23 +4290,15 @@ export function apply(ctx: Context, config: Config) {
         return '您已经是该职业了。';
       }
 
-      // 判断是否为首次转职（当前职业不在配置中或为null）
-      const isFirstTransfer = (!isCurrentCareerValid && !currentCareer) || 
-                             (!isCurrentSyndicateCareerValid && !currentSyndicateCareer);
-
       // 人类转职逻辑：必须加入人类联盟或辛迪加海盗阵营
       if (humanProfession) {
         if (careerData.faction !== '人类联盟' && careerData.faction !== '辛迪加海盗') {
           return '只有已加入阵营的玩家才能进行人类转职。';
         }
-        
-        // 非首次人类转职需要转职券
-        if (!isFirstTransfer && careerData.career) {
-          const [backpack] = await ctx.database.get('ggcevo_backpack', { handle, itemId: 7 });
-          if (!backpack || backpack.quantity < 1) {
-            return '后续人类转职需要转职券，您没有足够的转职券。';
-          }
-          await ctx.database.set('ggcevo_backpack', { handle, itemId: 7 }, { quantity: backpack.quantity - 1 });
+
+        // 检查是否已经有人类职业（一旦转职后无法更改）
+        if (isCurrentCareerValid) {
+          return `您已经转职为【${currentCareer}】，人类职业一旦转职后无法更改。`;
         }
       }
 
@@ -4477,21 +4307,17 @@ export function apply(ctx: Context, config: Config) {
         if (careerData.faction !== '辛迪加海盗') {
           return '只有辛迪加海盗可以转职为该职业。';
         }
-        
-        // 非首次辛迪加转职需要转职券
-        if (!isFirstTransfer && careerData.syndicateCareer) {
-          const [backpack] = await ctx.database.get('ggcevo_backpack', { handle, itemId: 7 });
-          if (!backpack || backpack.quantity < 1) {
-            return '后续辛迪加转职需要转职券，您没有足够的转职券。';
-          }
-          await ctx.database.set('ggcevo_backpack', { handle, itemId: 7 }, { quantity: backpack.quantity - 1 });
+
+        // 检查是否已经有辛迪加职业（一旦转职后无法更改）
+        if (isCurrentSyndicateCareerValid) {
+          return `您已经转职为【${currentSyndicateCareer}】，辛迪加职业一旦转职后无法更改。`;
         }
       }
 
       // 二次验证
       await session.send(
         `⚠️ 确认转职为【${profession}】吗？\n` +
-        `💡 提醒：${isFirstTransfer ? '首次转职免费' : '后续转职需要转职券'}，转职成功后，一般情况下无法更改职业！\n` +
+        `💡 提醒：职业一旦转职后将无法更改！\n` +
         `请在30秒内输入"是"确认转职，或输入其他内容取消。`
       );
 
@@ -4510,7 +4336,7 @@ export function apply(ctx: Context, config: Config) {
 
           return `转职成功！当前职业：${profession}\n💡 提醒：一般情况下无法更改职业。`;
 
-        // 辛迪加职业转职逻辑  
+          // 辛迪加职业转职逻辑  
         } else if (syndicateProfession) {
           // 更新职业信息
           await ctx.database.upsert('ggcevo_sign', [{
@@ -4561,18 +4387,28 @@ export function apply(ctx: Context, config: Config) {
 
         // 处理阵营和职业信息
         if (careerData.faction) {
-          // 阵营配置查询
-          const factionconfig = careerData.faction === '辛迪加海盗' ?
-            syndicatePirateConfig : spaceStationCrewConfig;
-          const profession = factionconfig.find(p => p.professionName === careerData.career);
-          const effectDisplay = profession?.effect || '无特殊效果';
+          // 获取人类职业信息
+          const humanProfession = spaceStationCrewConfig.find(p => p.professionName === careerData.career);
+          const humanEffectDisplay = humanProfession?.effect || '无特殊效果';
 
           // 添加阵营相关信息
+          infoCard.push(`🎯 当前阵营：${careerData.faction}`);
+
+          // 显示人类职业
           infoCard.push(
-            `🎯 当前阵营：${careerData.faction}`,
-            `👔 当前职业：${careerData.career}`,
-            `✨ 职业效果：${effectDisplay}`
+            `👔 人类职业：${careerData.career || '未转职'}`,
+            //`✨ 职业效果：${humanEffectDisplay}`
           );
+
+          // 辛迪加海盗阵营额外显示辛迪加职业
+          if (careerData.faction === '辛迪加海盗' && careerData.syndicateCareer) {
+            const syndicateProfession = syndicatePirateConfig.find(p => p.professionName === careerData.syndicateCareer);
+            const syndicateEffectDisplay = syndicateProfession?.effect || '无特殊效果';
+            infoCard.push(
+              `👔 辛迪加职业：${careerData.syndicateCareer}`,
+              //`✨ 职业效果：${syndicateEffectDisplay}`
+            );
+          }
 
           // 显示加入时间（如果存在）
           if (careerData.lastSign) {
@@ -5201,9 +5037,9 @@ export function apply(ctx: Context, config: Config) {
       }
 
       // 开始挖矿或更新记录
-      const isNeverMined = !playerStats?.miningStartTime || 
-                          playerStats.miningStartTime.getTime() === 0 || 
-                          playerStats.miningStartTime.getUTCFullYear() === 1970;
+      const isNeverMined = !playerStats?.miningStartTime ||
+        playerStats.miningStartTime.getTime() === 0 ||
+        playerStats.miningStartTime.getUTCFullYear() === 1970;
       if (isNeverMined) {
         await ctx.database.upsert('ggcevo_player_stats', [{
           handle,
@@ -5521,13 +5357,9 @@ export function apply(ctx: Context, config: Config) {
         const newCompletions = taskData.Completions + completableTimes;
 
         // === 奖励计算逻辑 ===
-        // 计算总基础奖励（不含任何加成）
-        const baseTotal = taskConfig.price * completableTimes;
-
         // 计算基础加成（科技和职业）
         let baseBonus = 0;
         if (techLevel > 0) {
-          // 计算基础加成
           baseBonus = (careerData?.faction === '人类联盟' && ['舰长', '情报副官'].includes(careerData?.career))
             ? [0, 10, 20, 30, 40, 50][techLevel]
             : [0, 5, 10, 15, 20, 25][techLevel];
@@ -5539,10 +5371,25 @@ export function apply(ctx: Context, config: Config) {
         // 总加成百分比
         const totalBonus = baseBonus + captainBonus;
 
-        // 计算实际总奖励（应用所有加成）
-        const totalReward = totalBonus > 0
-          ? Math.round(baseTotal * (1 + totalBonus / 100))
-          : baseTotal;
+        // 计算单次任务奖励
+        const singleReward = totalBonus > 0
+          ? Math.round(taskConfig.price * (1 + totalBonus / 100))
+          : taskConfig.price;
+
+        // 关键系统固件Lv.5额外结算概率（20%概率额外结算一次）
+        let extraReward = 0;
+        let extraCount = 0;
+        if (techLevel >= 5) {
+          for (let i = 0; i < completableTimes; i++) {
+            if (Math.random() < 0.2) {
+              extraReward += singleReward;
+              extraCount++;
+            }
+          }
+        }
+
+        // 总奖励
+        const totalReward = singleReward * completableTimes + extraReward;
 
         // 更新任务数据
         await ctx.database.set('ggcevo_task', {
@@ -5566,9 +5413,17 @@ export function apply(ctx: Context, config: Config) {
           `🎉 成功完成 ${completableTimes} 次【${taskName}】任务！`
         ];
 
-        // 显示总奖励信息（区分有无加成情况）
-        if (totalBonus > 0) {
-          response.push(`💰 获得奖励：${totalReward}金币 (基础值: ${baseTotal}金币)`);
+        // 显示总奖励信息（区分有无加成和额外结算情况）
+        const baseTotal = taskConfig.price * completableTimes;
+        if (totalBonus > 0 || extraReward > 0) {
+          let rewardMsg = `💰 获得奖励：${totalReward}金币`;
+          if (totalBonus > 0) {
+            rewardMsg += ` (基础值: ${baseTotal}金币)`;
+          }
+          if (extraReward > 0) {
+            rewardMsg += ` (额外结算: +${extraReward}金币)`;
+          }
+          response.push(rewardMsg);
         } else {
           response.push(`💰 获得奖励：${totalReward}金币`);
         }
@@ -5586,6 +5441,11 @@ export function apply(ctx: Context, config: Config) {
           if (captainBonus > 0) {
             response.push(`▸ 🚀 舰长职业: +${captainBonus}%金币`);
           }
+        }
+
+        // 显示额外结算信息
+        if (extraCount > 0) {
+          response.push(`▸ 🔮 关键系统固件Lv.5触发：额外结算${extraCount}次任务奖励`);
         }
 
         // 添加任务信息
@@ -5630,13 +5490,23 @@ export function apply(ctx: Context, config: Config) {
         ].join('\n');
       }
 
-      // 查找匹配的异形（支持模糊匹配）
+      // 查找匹配的异形（优先精确匹配）
       const searchName = unitName.trim().toLowerCase();
-      const matchedUnits = sortedUnits.filter(name =>
-        name.toLowerCase().includes(searchName)
-      );
+      
+      // 首先尝试精确匹配
+      const exactMatch = sortedUnits.find(name => name.toLowerCase() === searchName);
+      
+      // 如果没有精确匹配，再进行模糊匹配
+      let matchedUnits: string[];
+      if (exactMatch) {
+        matchedUnits = [exactMatch];
+      } else {
+        matchedUnits = sortedUnits.filter(name =>
+          name.toLowerCase().includes(searchName)
+        );
+      }
 
-      // 模糊匹配结果处理
+      // 匹配结果处理
       if (matchedUnits.length === 0) {
         return `未找到名称包含"${unitName}"的异形，请输入完整名称或部分关键词`;
       }
@@ -5644,11 +5514,11 @@ export function apply(ctx: Context, config: Config) {
         return [
           `找到多个包含"${unitName}"的异形：`,
           ...matchedUnits.map(name => `▸ ${name}`),
-          '请选择具体异形名称查询'
+          '请输入完整的异形名称查询（例如：技能 异齿猛兽 或 技能 异齿猛兽首领）'
         ].join('\n');
       }
 
-      // 精确匹配异形单位
+      // 获取匹配的异形单位
       const targetUnit = matchedUnits[0];
       let skills: string[] = [];
       let foundUnitType: string | null = null;
@@ -5672,11 +5542,19 @@ export function apply(ctx: Context, config: Config) {
       const expandedSkills = new Set<string>();
       const allSkillDetails: string[] = [];
 
+      // 技能层级符号定义
+      const levelSymbols = ['▸', '◇', '◆']; // 基础技能、一级衍生、二级衍生
+      const levelTitles = [
+        '🔹 【一级衍生技能】',
+        '🔸 【二级衍生技能】',
+        '【衍生技能】'
+      ];
+
       // 递归添加技能详情（带层级）
       const addSkillDetail = (skillName: string, indentLevel = 0, visited = new Set<string>()) => {
         // 避免循环引用
         if (visited.has(skillName)) {
-          allSkillDetails.push(`${'  '.repeat(indentLevel)}▸ ${skillName}：[递归终止 - 避免循环引用]`);
+          allSkillDetails.push(`${'  '.repeat(indentLevel)}${levelSymbols[indentLevel] || '▸'} ${skillName}：[递归终止 - 避免循环引用]`);
           return;
         }
         visited.add(skillName);
@@ -5684,7 +5562,7 @@ export function apply(ctx: Context, config: Config) {
         // 检查技能配置是否存在
         const config = passiveConfig[skillName];
         if (!config) {
-          allSkillDetails.push(`${'  '.repeat(indentLevel)}▸ ${skillName}：技能未定义`);
+          allSkillDetails.push(`${'  '.repeat(indentLevel)}${levelSymbols[indentLevel] || '▸'} ${skillName}：技能未定义`);
           return;
         }
 
@@ -5699,15 +5577,15 @@ export function apply(ctx: Context, config: Config) {
 
         // 添加当前技能
         const indent = '  '.repeat(indentLevel);
-        allSkillDetails.push(`${indent}▸ ${skillName}：\n    ${desc}`);
+        const symbol = levelSymbols[indentLevel] || '▸';
+        allSkillDetails.push(`${indent}${symbol} ${skillName}：\n    ${desc}`);
 
         // 添加衍生技能（如果有）
         const derivedSkills = config.derivedSkills || [];
         if (derivedSkills.length > 0) {
           // 添加衍生技能标题
-          const derivedTitle = indentLevel === 0 ? '↓ 一级衍生技能 ↓' :
-            indentLevel === 1 ? '↓ 二级衍生技能 ↓' : '↓ 衍生技能 ↓';
-          allSkillDetails.push(`${indent}  ${derivedTitle}`);
+          const titleIndex = indentLevel < levelTitles.length ? indentLevel : levelTitles.length - 1;
+          allSkillDetails.push(`${indent}${levelTitles[titleIndex]}`);
 
           // 添加每个衍生技能
           derivedSkills.forEach(derivedSkill => {
@@ -5870,6 +5748,17 @@ export function apply(ctx: Context, config: Config) {
 
       // 获取当前时间
       const now = new Date();
+
+      // 自动修复异常数据：如果 exploreStartTime 不为空但 galaxy 为空，说明数据异常
+      if (playerStats.exploreStartTime && !playerStats.galaxy) {
+        await ctx.database.set('ggcevo_player_stats', { handle }, {
+          exploreStartTime: null,
+          galaxy: null,
+          plunderBonus: 0
+        });
+        playerStats.exploreStartTime = null;
+        playerStats.galaxy = null;
+      }
 
       // 处理探索状态
       if (playerStats.exploreStartTime) {
@@ -6650,176 +6539,6 @@ export function apply(ctx: Context, config: Config) {
       }
     });
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  ctx.command('ggcevo/签到奖励')
-    .action(({ }) => {
-      return `
-签到金币奖励：
-每天获得50-100金币
---------------
-签到红晶奖励(辛迪加财务经理职业加成)：
-每天签到获得5枚红晶
-`.trim()
-    })
-
-  ctx.command('ggcevo/pk规则')
-    .action(({ }) => {
-      return `
-⚔️【全新PK规则】⚔️  
-1️⃣ 阵营限制  
-仅限「人类联盟」与「辛迪加海盗」成员参与PK  
-未加入阵营玩家请使用「加入」指令选择阵营  
-      
-2️⃣ 人类联盟保护机制  
-新成员享有30天保护期（从加入阵营日起算）
-保护期内不可被挑战  
-首次主动发起PK即视为放弃保护期（永久开启PK功能）  
-      
-3️⃣ 战斗惩罚调整  
-人类联盟被动应战的PK战败 ➜ 仅损失1%金币
-辛迪加海盗PK战败 ➜ 随机1%-5%损失金币  
-      
-4️⃣ 每日限制  
-主动发起PK次数：3次/日  
-PK同玩家限战：1次/日  
-被PK次数上限：5次/日  
-      
-🔥【战力系统升级】🔥  
-1️⃣ 战力组成  
-武器加成 + 职业加成 
-      
-2️⃣ 武器加成
-每拥有一把武器 ➜ + 基础伤害 x 100
-      
-每一把武器强化等级带来指数级战力增长：
-等级1 ➜ +1000  
-等级2 ➜ +3000 
-等级3 ➜ +6000 
-等级4 ➜ +10000  
-等级5 ➜ +15000  
-等级6 ➜ +21000 
-      
-每改装一个通用模块 ➜ +2000
-每改装一个专属模块 ➜ +4000
-      
-3️⃣ 职业加成
-联盟新兵：+1000  
-深空矿工，医疗专家，情报副官，总工程师，舰长，机械化专家：+2500
-警卫员下士，警卫长，武器中士：+3500
-辛迪加炮灰新兵：+2000
-清洁工，辛迪加财务经理，计算机专家，指挥官，装甲兵，破坏者，征募官：+3000 
-能量武器专家，枪手，猩红杀手，纵火狂：+4000
-`.trim()
-    })
-
-  ctx.command('ggcevo/击败奖励')
-    .alias('击杀奖励')
-    .action(({ }) => {
-      return `
-🌟 异形主宰击败奖励规则 🌟
-🏆 伤害榜奖励（按伤害排名）：
-1️⃣ 第1名: 
-   35 资源兑换券
-2️⃣ 第2名: 
-   30 资源兑换券
-3️⃣ 第3名: 
-   25 资源兑换券
-🏅 第4-10名: 
-   20 资源兑换券
-🎖 第11-20名: 
-   15 资源兑换券
-💫 第21-50名: 
-   10 资源兑换券
-💝 其他参与者:
-   5 资源兑换券
-           
-🌈 精灵双倍祈愿生效期间，获得双倍的资源兑换券
-         
-💡 特殊说明：
-1. 奖励自动发放到账户，无需手动领取
-2. 精灵双倍祈愿可通过"祈愿"指令概率获得
-3. 排名根据实际造成伤害计算
-`.trim()
-    })
-
-  ctx.command('ggcevo/祈愿系统')
-    .action(({ }) => {
-      return `
-🎋 祈愿系统
-祈愿是连接星界的神秘仪式，消耗50金币可换取随机祈愿效果！通过智慧与运气的交织，助你在咕咕之战路上突破瓶颈。效果持续7天​​ ，冷却期间无法再次祈愿。
-      
-🍀 ​​普通祈愿池（95%概率）​​
-🦗 ​​蚱蜢优购​​：下一次购买武器(非传奇)享有20%的折扣
-🦊 ​​灵狐升运​​：下一次升级武器享有20%的折扣
-👑 ​​王权增幅​​：攻击伤害提高5%
-🍊 ​​金柚赐福​​：立即获得3张资源兑换券
-🪙 ​​夜市赠礼​​：立即获得5枚咕咕币
-      
-🔮 ​​稀有祈愿池（5%概率）​​
-🗡️ ​​悲鸣之锋​​：攻击伤害提高10%，武器每等级提高5%伤害
-🧚 ​​精灵双倍​​：下一次击败主宰时可获得双倍的资源兑换券
-🐾 ​​喵喵财源​​：签到获得双倍的金币和咕咕币
-🎵 ​​暴击韵律​​：攻击暴击率提高20%
-⚠️ ​​酥手空空​​：立即失去50枚金币（可触发彩蛋）
-`.trim()
-    })
-
-  ctx.command('ggcevo/赛季奖励')
-    .alias('排名奖励')
-    .action(({ }) => {
-      return `
-🏆 赛季排名奖励规则：
-🥇 第1名：
-   100 咕咕币 + 🥇 赛季冠军勋章
-🥈 第2名：
-   90 咕咕币 + 🥈 赛季亚军勋章
-🥉 第3名：
-   80 咕咕币 + 🥉 赛季季军勋章
-🏅 第4-10名：
-   60 咕咕币 + 🏅 赛季前十勋章
-🎖 第11-20名：
-   40 咕咕币 + 🎖 赛季前二十勋章
-💝 参与奖励：
-▸ 所有积分 > 0 玩家：20 咕咕币
-▸ 所有积分 ≤ 0 玩家：10 咕咕币
-      
-📦 勋章系统：
-● 每个勋章对应专属成就
-● 可永久保存在背包中
-● 动态赛季名称显示（如：🥇S1赛季冠军勋章）
-      
-📌 重要说明：
-1. 结算后自动发放所有奖励
-2. 勋章可通过背包查看
-3. 每个赛季持续2个月，可通过"胜点榜"指令查看
-`.trim()
-    })
-
   // 添加定时任务，每半小时触发一次
   ctx.setInterval(async () => {
     try {
@@ -6842,10 +6561,10 @@ PK同玩家限战：1次/日
       if (inactiveMainBosses.length > 0) {
         // a. 将所有玩家的ggcevo_player_stats的totalDamage，attackCount清0
         await ctx.database.set('ggcevo_player_stats', {}, { totalDamage: 0, attackCount: 0 });
-        
+
         // b. 清空ggcevo_boss数据库所有数据
         await ctx.database.remove('ggcevo_boss', {});
-        
+
         // c. 根据权重重新生成新的boss组
         await activateNextBossGroup(ctx);
         console.log('重置boss组并创建新的boss组成功');

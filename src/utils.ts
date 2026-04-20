@@ -1132,14 +1132,13 @@ export function getHalfDayIdentifier(date) {
   return `${year}${month}${day}_${period}`;
 }
 
-// 初始化权重表（完全在内存处理）
 export async function initWeights(ctx) {
   for (const group of bossGroups) {
-    await ctx.database.create('ggcevo_boss_weights', {
+    await ctx.database.upsert('ggcevo_boss_weights', [{
       groupId: group.groupId,
       weight: 100,
-      lastSpawn: new Date(0) // 设置为遥远的过去
-    });
+      lastSpawn: convertUTCtoChinaTime(new Date())
+    }], ['groupId']);
   }
 }
 
@@ -1154,7 +1153,7 @@ export async function updateWeights(ctx: Context, selectedId: number) {
       // 选中的BOSS组权重设为固定值50
       await ctx.database.set('ggcevo_boss_weights', { groupId: weight.groupId }, {
         weight: 50,
-        lastSpawn: new Date()
+        lastSpawn: convertUTCtoChinaTime(new Date())
       });
     } else {
       // 其他BOSS组权重增加20%（最高500）
