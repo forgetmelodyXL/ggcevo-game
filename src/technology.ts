@@ -53,26 +53,26 @@ export const Spacestationtechnology = [
       {
         level: 2,
         cost: 1500,
-        description: '提升空间站武器等级，购买II类及以下武器享有25%的折扣',
-        careerBonus: '购买II类及以下武器额外享有25%的折扣'
+        description: '提升空间站武器等级，解锁购买II类及以下武器权限',
+        careerBonus: '购买II类及以下武器享有25%的折扣'
       },
       {
         level: 3,
         cost: 2550,
-        description: '提升空间站武器等级，购买III类武器享有25%的折扣',
-        careerBonus: '购买III类及以下武器额外享有25%的折扣'
+        description: '提升空间站武器等级，解锁购买III类武器权限',
+        careerBonus: '购买III类及以下武器享有25%的折扣'
       },
       {
         level: 4,
         cost: 3950,
-        description: '提升空间站武器等级，购买IV类及以下武器享有25%的折扣',
-        careerBonus: '购买IV类及以下武器额外享有25%的折扣'
+        description: '提升空间站武器等级，解锁购买IV类及以下武器权限',
+        careerBonus: '购买IV类及以下武器享有25%的折扣'
       },
       {
         level: 5,
         cost: 4650,
-        description: '提升空间站武器等级，购买V类及以下武器享有25%的折扣; 获得传奇武器购买权限1次',
-        careerBonus: '购买V类及以下武器额外享有25%的折扣; 升级武器享有20%的折扣'
+        description: '提升空间站武器等级，解锁购买V类及以下武器权限',
+        careerBonus: '购买V类及以下武器享有25%的折扣'
       },
     ]
   },
@@ -130,7 +130,7 @@ export const Spacestationtechnology = [
         level: 5,
         cost: 5350,
         description: '完全恢复空间站安防系统，攻击获得的金币+25%',
-        careerBonus: '攻击获得的金币额外+25%; 获得解锁军械库防爆门权限1次，可以随机获得一把传奇武器'
+        careerBonus: '攻击获得的金币额外+25%'
       },
     ]
   },
@@ -168,7 +168,7 @@ export const Spacestationtechnology = [
         level: 5,
         cost: 3550,
         description: '升级空间站关键系统，完成任务奖励+25%',
-        careerBonus: '完成任务奖励额外+25%；签到金币奖励+100%'
+        careerBonus: '完成任务奖励额外+25%；完成任务时有20%概率额外获得一次奖励'
       },
     ]
   },

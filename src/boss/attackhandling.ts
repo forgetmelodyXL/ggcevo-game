@@ -7,73 +7,6 @@ import { weaponConfig } from '../weapons'
 import { bossPool } from './boss'
 
 
-async function getCleanerRewardBroadcast(
-    ctx: Context,
-    boss,
-    killerHandle: string,
-    killerName: string
-): Promise<string[]> {
-    const bossType = boss.type;
-    const bossName = boss.name;
-
-    // 消息收集数组
-    const broadcastMessages: string[] = [];
-
-    // ====================== 警卫长奖励部分 ======================
-    // 根据被击败的BOSS类型确定基础金币奖励
-    let guardBaseReward = 0;
-    if (['巢穴雷兽', '巢穴战士', '巢穴甲虫'].includes(bossName)) {
-        guardBaseReward = 200;
-    } else {
-        guardBaseReward = bossType === '主宰' ? 1000 : 500;
-    }
-
-    // 获取所有警卫长
-    const allSigns = await ctx.database.get('ggcevo_sign', {});
-    const allGuards = allSigns.filter(sign => sign.career === '警卫长');
-
-
-    // 如果没有警卫长则跳过
-    if (allGuards.length > 0) {
-        // 获取警卫长的金币记录
-        const guardHandles = allGuards.map(g => g.handle);
-        const signRecords = await ctx.database.get('ggcevo_sign', {
-            handle: { $in: guardHandles }
-        });
-
-        // 创建handle到记录的映射
-        const signMap = new Map(signRecords.map(record => [record.handle, record]));
-
-        let guardKillerBonus = false;
-
-        for (const guard of allGuards) {
-            let rewardAmount = guardBaseReward;
-
-            // 检查是否为致命一击玩家
-            if (guard.handle === killerHandle) {
-                rewardAmount *= 2; // 致命一击奖励翻倍
-                guardKillerBonus = true;
-            }
-
-            // 获取当前金币数量
-            const currentSignRecord = signMap.get(guard.handle);
-            const currentTotal = currentSignRecord?.totalRewards || 0;
-
-            // 更新或创建金币记录
-            await ctx.database.upsert('ggcevo_sign', [{
-                handle: guard.handle,
-                totalRewards: currentTotal + rewardAmount,
-            }], ['handle']);
-        }
-
-        // 构建警卫长奖励消息
-        const guardMessage = `👮 警卫长职业因 ${bossName} 阵亡，获得 ${guardBaseReward} 金币${guardKillerBonus ? ` (击败者 ${killerName} 获得双倍奖励)` : ''}`;
-        broadcastMessages.push(guardMessage);
-    }
-
-    return broadcastMessages;
-}
-
 async function handleBossDefeatRewards(
     ctx: Context,
     targetBoss: any,
@@ -420,17 +353,8 @@ export async function handleDeathTargets(
     killerHandle: string
 ) {
     const bossBroadcast: string[] = [];
-    const cleanerBroadcast: string[] = [];
 
     for (const deadBoss of deadTargets) {
-        // 处理清洁工奖励
-        const cleanerReward = await getCleanerRewardBroadcast(
-            ctx, deadBoss, killerHandle, killerName
-        );
-        if (cleanerReward.length > 0) {
-            cleanerBroadcast.push(...cleanerReward);
-        }
-
         // 主宰死亡处理
         if (deadBoss.type === '主宰') {
             // 设置所有激活的BOSS为非激活状态
@@ -475,8 +399,7 @@ export async function handleDeathTargets(
     }
 
     return {
-        bossBroadcast,
-        cleanerBroadcast
+        bossBroadcast
     };
 }
 
@@ -648,22 +571,16 @@ export async function handleBroadcasts(
     ctx: Context,
     groupIds: string[],
     bossEventBroadcast: string[] | string | null,
-    cleanerRewardBroadcast: string[] | null,
 ) {
     const broadcastMessages: string[] = [];
 
 
-    // 2. 添加BOSS事件广播（如果有）
+    // 添加BOSS事件广播（如果有）
     if (bossEventBroadcast) {
         const bossMsg = Array.isArray(bossEventBroadcast)
             ? bossEventBroadcast.join('\n')
             : bossEventBroadcast;
         broadcastMessages.push(bossMsg);
-    }
-
-    // 3. 添加清洁工奖励广播（如果是主目标攻击）
-    if (cleanerRewardBroadcast && cleanerRewardBroadcast.length > 0) {
-        broadcastMessages.push(cleanerRewardBroadcast.join('\n'));
     }
 
     // 发送广播

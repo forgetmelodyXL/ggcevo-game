@@ -21,7 +21,7 @@ export const spaceStationCrewConfig = [
   },
   {
     professionName: '武器中士',
-    effect: '攻击伤害+15%; 购买传奇武器无需权限次数（第一次购买将消耗权限次数半价购买传奇武器）',
+    effect: '攻击伤害+15%；购买任意武器享有25%的折扣',
     costcoins: 3000,
   },
   {
@@ -60,7 +60,7 @@ export const syndicatePirateConfig = [
   },
   {
     professionName: '清洁工',
-    effect: '每次攻击额外获得1枚红晶，每造成100伤害额外获得1枚红晶（至多额外获得3枚）',
+    effect: '每次攻击额外获得1枚红晶',
     costredcrystal: 20,
   },
   {
@@ -80,22 +80,22 @@ export const syndicatePirateConfig = [
   },
   {
     professionName: '辛迪加财务经理',
-    effect: '每日签到能额外获得5枚红晶',
+    effect: '每日签到额外获得3枚红晶',
     costredcrystal: 20,
   },
   {
     professionName: '计算机专家',
-    effect: '黑市订购设备工具类享有50%折扣; 主动发起的PK胜率提高10%； 每日主动PK次数增加3次',
+    effect: '黑市订购设备工具类享有50%折扣；PK时的胜率+10%',
     costredcrystal: 20,
   },
   {
     professionName: '指挥官',
-    effect: '使用红晶升级物品享有50%的折扣；升级物品时有50%的概率获得双倍加成',
+    effect: '',
     costredcrystal: 30,
   },
   {
     professionName: '装甲兵',
-    effect: '所有武器额外拥有一个改装槽；武器改装任意模块享有10%的折扣',
+    effect: '',
     costredcrystal: 40,
   },
   {
@@ -109,243 +109,3 @@ export const syndicatePirateConfig = [
     costredcrystal: 20,
   },
 ]
-
-// 新增条件验证函数
-export async function checkTransferRequirements(ctx: Context, handle: string, profession: string): Promise<{ success: boolean; message?: string }> {
-  const [mainBoss] = await ctx.database.get('ggcevo_boss', {
-    type: '主宰',
-    isActive: true
-  });
-
-  const [signData] = await ctx.database.get('ggcevo_sign', { handle });
-  if (!signData) {
-    return { success: false, message: '🔒 您尚未进行签到，请先使用"签到"指令' };
-  }
-  
-  const [playerStats] = await ctx.database.get('ggcevo_player_stats', { handle });
-  if (!playerStats) {
-    return { success: false, message: '🔒 您尚未进行签到，请先使用"签到"指令' };
-  }
-  
-  const damageRecords = await ctx.database.get('ggcevo_player_stats', { handle });
-
-  const totalAttack = damageRecords.reduce((sum, r) => sum + r.attackCount, 0);
-  const totalDamage = damageRecords.reduce((sum, r) => sum + r.totalDamage, 0);
-
-  const weapons = await ctx.database.get('ggcevo_weapons', {
-    handle,
-    level: { $gte: 3 }
-  });
-
-  let hasLevel6Weapon = false
-
-  switch (profession) {
-    case '深空矿工':
-      // 获取挖矿记录
-      const [playerStats] = await ctx.database.get('ggcevo_player_stats', { handle });
-      const totalMined = playerStats?.totalMined || 0;
-
-      return {
-        success: totalMined >= 500,
-        message: totalMined >= 500 ? '' : `需要挖矿累计收益达到500金币(当前${totalMined}金币)`
-      };
-
-    // +++ 新增总工程师检查 +++
-    case '总工程师': {
-      const [playerStats] = await ctx.database.get('ggcevo_player_stats', { handle });
-      const totalReturns = playerStats?.exploreSuccessCount || 0;
-
-      return {
-        success: totalReturns >= 4,
-        message: totalReturns >= 4
-          ? ''
-          : `需要探索返回次数达到4次及以上(当前${totalReturns}次)`
-      };
-    }
-
-    case '警卫长':
-      if (!mainBoss) return { success: false, message: '当前暂无伤害榜。' };
-      return {
-        success: totalAttack >= 4,
-        message: `需要当期伤害榜累计攻击4次及以上(当前${totalAttack}次)`
-      };
-
-    case '警卫员下士': {
-      if (!mainBoss) return { success: false, message: '当前暂无伤害榜。' };
-      return {
-        success: totalDamage >= 100,
-        message: `需要当期伤害榜累计造成100及以上伤害(当前${totalDamage})`
-      };
-    }
-
-    case '武器中士':
-      // 检查是否拥有6级及以上武器
-      hasLevel6Weapon = weapons.some(weapon => weapon.level >= 6);
-      return {
-        success: hasLevel6Weapon,
-        message: hasLevel6Weapon ? '' : '需要至少拥有一把6级及以上等级的武器'
-      };
-
-    // +++ 新增舰长检查 +++
-    case '舰长': {
-      const taskRecords = await ctx.database.get('ggcevo_task', { handle });
-      const totalCompletions = taskRecords.reduce(
-        (sum, task) => sum + (task.Completions || 0),
-        0
-      );
-
-      return {
-        success: totalCompletions >= 4,
-        message: totalCompletions >= 4
-          ? ''
-          : `需要累计完成4次及以上任务(当前${totalCompletions}次)`
-      };
-    }
-
-    case '情报副官':
-      const techs = await ctx.database.get('ggcevo_tech', { handle });
-      const hasValidTech = techs.some(t => t.level >= 5);
-      return {
-        success: hasValidTech,
-        message: hasValidTech ? '' : '需要至少一个空间站科技等级≥5级'
-      };
-
-    case '能量武器专家':
-      const hasEnergyWeapon = weapons.some(weapon => {
-        const weaponConfigEntry = Object.values(weaponConfig).find(c => c.id === weapon.weaponId);
-        return weaponConfigEntry?.type === '能量武器';
-      });
-      return {
-        success: hasEnergyWeapon,
-        message: `需要至少拥有一把3级及以上等级的能量武器`
-      };
-
-    case '纵火狂':
-      const hasthermalWeapon = weapons.some(weapon => {
-        const weaponConfigEntry = Object.values(weaponConfig).find(c => c.id === weapon.weaponId);
-        return weaponConfigEntry?.type === '热能武器';
-      });
-      return {
-        success: hasthermalWeapon,
-        message: `需要至少拥有一把3级及以上等级的热能武器`
-      };
-
-    case '猩红杀手': {
-      const scoutRifle = weapons.find(weapon => weapon.weaponId === 7)
-      return {
-        success: !!scoutRifle,
-        message: scoutRifle ? '' : '需要“侦察步枪”武器等级≥3级'
-      }
-    };
-
-    case '枪手':
-      // 检查是否拥有6级及以上武器
-      hasLevel6Weapon = weapons.some(weapon => weapon.level >= 6);
-      return {
-        success: hasLevel6Weapon,
-        message: hasLevel6Weapon ? '' : '需要至少拥有一把6级及以上等级的武器'
-      };
-
-    case '破坏者':
-      // 从仓库获取所有物品
-      const warehouseItems = await ctx.database.get('ggcevo_backpack', { handle });
-
-      // 定义黑市爆破物物品ID列表
-      const blackMarketExplosives = Object.values(SyndicatedItems)
-        .filter(item => item.type === '爆破物' && item.redCrystalCost >= 0)
-        .map(item => item.id);
-
-      // 检查仓库中是否有符合条件的黑市爆破物
-      const hasExplosive = warehouseItems.some(item =>
-        blackMarketExplosives.includes(item.itemId) && item.quantity >= 0
-      );
-
-      return {
-        success: hasExplosive,
-        message: hasExplosive ? '' : '需要仓库中拥有一个爆破物类物品'
-      };
-
-    case '装甲兵': {
-      // 获取用户的所有武器
-      const userWeapons = await ctx.database.get('ggcevo_weapons', {
-        handle,
-      });
-
-      // 检查是否有任何武器的installedMods数组长度 >= 3
-      const hasModifiedWeapon = userWeapons.some(weapon =>
-        weapon.installedMods && weapon.installedMods.length >= 3
-      );
-
-      return {
-        success: hasModifiedWeapon,
-        message: hasModifiedWeapon ? '' : '需要至少拥有一把改装了3个模块的武器'
-      };
-    }
-
-
-    case '征募官': {
-      // 获取玩家的PK数据
-      const [pkProfile] = await ctx.database.get('ggcevo_player_stats', { handle });
-
-      if (!pkProfile) {
-        return {
-          success: false,
-          message: '没有PK记录，需要PK胜利20次及以上'
-        };
-      }
-
-      return {
-        success: pkProfile.wins >= 20,
-        message: pkProfile.wins >= 20
-          ? ''
-          : `需要PK胜利20次及以上(当前${pkProfile.wins}次)`
-      };
-    }
-
-    case '清洁工':
-      if (!mainBoss) return { success: false, message: '当前暂无伤害榜。' };
-      return {
-        success: totalAttack >= 4,
-        message: `需要当期伤害榜累计攻击4次及以上(当前${totalAttack}次)`
-      };
-
-    case '辛迪加财务经理':
-      return {
-        success: signData?.monthlyDays >= 14,
-        message: `需要当月累计签到14天及以上(当前${signData?.monthlyDays || 0}天)`
-      };
-
-    case '计算机专家': {
-      // 从仓库获取所有物品
-      const warehouseItems = await ctx.database.get('ggcevo_backpack', { handle });
-
-      // 定义黑市设备工具物品ID列表
-      const blackMarketDeviceTools = Object.values(SyndicatedItems)
-        .filter(item => item.type === '设备工具' && item.redCrystalCost > 0)
-        .map(item => item.id);
-
-      // 检查仓库中是否有符合条件的黑市设备工具
-      const hasDeviceTool = warehouseItems.some(item =>
-        blackMarketDeviceTools.includes(item.itemId) && item.quantity > 0
-      );
-
-      return {
-        success: hasDeviceTool,
-        message: hasDeviceTool ? '' : '需要仓库中拥有一个从黑市订购的设备工具物品'
-      };
-    }
-
-    case '指挥官': {
-      // 指挥官职业要求已移除
-      return {
-        success: true,
-        message: ''
-      };
-    }
-
-
-
-    default:
-      return { success: false, message: '未知职业要求' };
-  }
-}
