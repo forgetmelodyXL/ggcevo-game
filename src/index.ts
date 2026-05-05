@@ -36,6 +36,7 @@ export interface Config {
   enablePlayRequirement: boolean
 
   enableMatchesRequirement: boolean  // 新增：是否需要场次需求开关
+  enableExchangeCouponForResource: boolean // 是否允许用兑换券兑换资源兑换券
 }
 
 export const Config: Schema<Config> = Schema.intersect([
@@ -60,6 +61,8 @@ export const Config: Schema<Config> = Schema.intersect([
       .description('禁用全局兑换限制(谨慎开启)').default(false),
     enableMatchesRequirement: Schema.boolean()  // 新增配置项
       .description('兑换物品是否需要场次需求').default(true),  // 默认开启
+    enableExchangeCouponForResource: Schema.boolean()
+      .description('是否允许用兑换券兑换资源兑换券').default(false),
   }).description('赛季配置'),
 
   // 对战系统配置组
@@ -6294,7 +6297,7 @@ export function apply(ctx: Context, config: Config) {
       if (!signCheck) return '🔒 您尚未进行签到，请先使用"签到"指令';
 
       // 可兑换物品映射表
-      const exchangeItems = {
+      const exchangeItems: { [key: string]: any } = {
         // === 特殊资源兑换 ===
         '金币': {
           type: 'resource',
@@ -6320,10 +6323,13 @@ export function apply(ctx: Context, config: Config) {
             }
             return null
           }
-        },
+        }
+        // 可在此继续添加其他物品兑换...
+      }
 
-        // === 物品兑换 ===
-        '资源兑换券': {
+      // 根据配置决定是否添加兑换券兑换资源兑换券功能
+      if (config.enableExchangeCouponForResource) {
+        exchangeItems['资源兑换券'] = {
           type: 'item',
           costItemId: 2,     // 消耗：ItemID=2 (兑换券)
           costAmount: 1,     // 每张兑换券消耗数量
@@ -6331,7 +6337,6 @@ export function apply(ctx: Context, config: Config) {
           gainAmount: 20,    // 获得数量
           display: '1张兑换券 → 20张资源兑换券'
         }
-        // 可在此继续添加其他物品兑换...
       }
 
       // 无参数时显示可兑换物品列表
@@ -6339,6 +6344,13 @@ export function apply(ctx: Context, config: Config) {
         // 查询用户持有的相关物品
         const [resourceCoupon] = await ctx.database.get('ggcevo_backpack', { handle, itemId: 8 })   // 资源兑换券
         const [exchangeCoupon] = await ctx.database.get('ggcevo_backpack', { handle, itemId: 2 })    // 兑换券
+
+        const examples = [
+          '"兑换资源 金币 5" → 兑换500金币（消耗5张资源券）'
+        ]
+        if (config.enableExchangeCouponForResource) {
+          examples.push('"兑换资源 资源兑换券 2" → 兑换40张资源券（消耗2张兑换券）')
+        }
 
         return [
           '🛒 资源兑换商店 🛒',
@@ -6352,8 +6364,7 @@ export function apply(ctx: Context, config: Config) {
           }),
           '====================',
           '输入示例：',
-          '"兑换资源 金币 5" → 兑换500金币（消耗5张资源券）',
-          '"兑换资源 资源兑换券 2" → 兑换40张资源券（消耗2张兑换券）'
+          ...examples
         ].join('\n')
       }
 
