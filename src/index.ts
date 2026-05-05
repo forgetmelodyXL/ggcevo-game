@@ -34,9 +34,7 @@ export interface Config {
   unlimitedBossAttack: boolean // 无限制攻击主宰开关
   enableCurfew: boolean       // 是否开启宵禁模式
   enablePlayRequirement: boolean
-
   enableMatchesRequirement: boolean  // 新增：是否需要场次需求开关
-  enableExchangeCouponForResource: boolean // 是否允许用兑换券兑换资源兑换券
 }
 
 export const Config: Schema<Config> = Schema.intersect([
@@ -44,11 +42,10 @@ export const Config: Schema<Config> = Schema.intersect([
   Schema.object({
     proxyAgent: Schema.string()
       .description('代理服务器地址'),
-    enablePlayRequirement: Schema.boolean() // 新增配置项
+    enablePlayRequirement: Schema.boolean()
       .description('开启签到需3天游戏记录(关闭时无限制)').default(false),
     enableCurfew: Schema.boolean()
       .description('是否开启宵禁模式(18:00-24:00禁止群聊指令)').default(false),
-
   }).description('基础设置'),
 
   // 赛季与兑换配置组
@@ -61,8 +58,6 @@ export const Config: Schema<Config> = Schema.intersect([
       .description('禁用全局兑换限制(谨慎开启)').default(false),
     enableMatchesRequirement: Schema.boolean()  // 新增配置项
       .description('兑换物品是否需要场次需求').default(true),  // 默认开启
-    enableExchangeCouponForResource: Schema.boolean()
-      .description('是否允许用兑换券兑换资源兑换券').default(false),
   }).description('赛季配置'),
 
   // 对战系统配置组
@@ -83,8 +78,21 @@ export const Config: Schema<Config> = Schema.intersect([
       .description('咕咕之战广播通知群组').default([]),
   }).description('通知设置').collapse(),
 
-
-
+  // 指令启用配置组
+  Schema.object({
+    enableRankingCommands: Schema.boolean()
+      .description('是否启用排行榜相关指令(胜点榜、排名、pk榜、伤害榜、赛季结算、标记)').default(false),
+    enablePKCommands: Schema.boolean()
+      .description('是否启用PK对战指令(pk、兑换资源)').default(false),
+    enableWeaponCommands: Schema.boolean()
+      .description('是否启用武器装备相关指令(武器库、爆破库、购买、武器仓库、装备武器、升级武器、改装武器、拆卸)').default(false),
+    enableBossCommands: Schema.boolean()
+      .description('是否启用主宰战斗相关指令(升级科技、科技、攻击、攻击假人、异形信息、异形刷新权重、技能)').default(false),
+    enableFactionCommands: Schema.boolean()
+      .description('是否启用阵营职业相关指令(加入、退出、转职、职业信息、黑市、订购)').default(false),
+    enableOtherCommands: Schema.boolean()
+      .description('是否启用其他系统指令(祈愿、使用、挖矿、任务、完成任务、咕咕更新、探索、购买飞船、签到奖励、pk规则、击败奖励、祈愿系统、赛季奖励)').default(false),
+  }).description('指令启用设置'),
 ])
 
 export function apply(ctx: Context, config: Config) {
@@ -979,6 +987,7 @@ export function apply(ctx: Context, config: Config) {
     .alias('排行榜')
     .usage("输入 胜点榜 [页码] 查看对应页的排行榜，每页10条")
     .action(async ({ session }, page) => {
+      if (!config.enableRankingCommands) return '该指令当前未启用，请联系管理员开启。';
 
 
 
@@ -1062,6 +1071,7 @@ export function apply(ctx: Context, config: Config) {
 
   ctx.command('ggcevo/赛季结算', '进行赛季结算并发放奖励', { authority: 3 })
     .action(async ({ session }) => {
+      if (!config.enableRankingCommands) return '该指令当前未启用，请联系管理员开启。';
 
       // 发送确认提示
       await session.send(`确定要进行赛季结算吗？(请在30秒内回复"是"确认)`)
@@ -1180,6 +1190,7 @@ export function apply(ctx: Context, config: Config) {
     .alias('rank')
     .usage("输入“排名”查看自己的排名信息")
     .action(async (argv, player) => {
+      if (!config.enableRankingCommands) return '该指令当前未启用，请联系管理员开启。';
       const session = argv.session;
 
 
@@ -1275,7 +1286,8 @@ export function apply(ctx: Context, config: Config) {
 
 
 
-  ctx.command('ggcevo/兑换赞助物品', '兑换赞助物品')
+  ctx.command('ggcevo/兑换', '兑换赞助物品')
+    .alias('兑换赞助物品')
     .action(async ({ session }) => {
 
 
@@ -1622,6 +1634,7 @@ export function apply(ctx: Context, config: Config) {
 
   ctx.command('ggcevo/标记 [handle]', '标记用户到胜点榜黑名单', { authority: 3 })
     .action(async (argv, handle) => {
+      if (!config.enableRankingCommands) return '该指令当前未启用，请联系管理员开启。';
       const session = argv.session;
 
       if (!handle) {
@@ -1802,6 +1815,7 @@ export function apply(ctx: Context, config: Config) {
     .command('ggcevo/pk [user]', '发起玩家对战')
     .alias('挑战')
     .action(async (argv, user) => {
+      if (!config.enablePKCommands) return '该指令当前未启用，请联系管理员开启。';
       try {
         const session = argv.session; // 获取 Session 对象
 
@@ -2108,28 +2122,63 @@ export function apply(ctx: Context, config: Config) {
             date: new Date()
           })
 
-          // 常规金币转移逻辑
-          if (isWin) {
-            await ctx.database.set('ggcevo_sign', targetHandle, {
-              totalRewards: targetGold - goldTransfer
-            });
-            await ctx.database.set('ggcevo_sign', initiatorHandle, {
-              totalRewards: initiatorGold + goldTransfer
-            });
-          } else {
-            await ctx.database.set('ggcevo_sign', initiatorHandle, {
-              totalRewards: initiatorGold - goldTransfer
-            });
-            await ctx.database.set('ggcevo_sign', targetHandle, {
-              totalRewards: targetGold + goldTransfer
-            });
+          // ================== 新增点4：财务经理职业奖励 ==================
+          let extraRedCrystal = 0;
+          // 主动PK且获胜
+          if (isWin && initiatorCareer?.career === '辛迪加财务经理') {
+            //extraRedCrystal = 1;
           }
 
-          // 气喇叭生效时，额外白送金币（不是从失败者掠夺）
-          if (hornEffect) {
-            await ctx.database.set('ggcevo_sign', winnerHandle, {
-              totalRewards: (isWin ? initiatorGold + goldTransfer : targetGold + goldTransfer) + extraGold
-            });
+          // ================== 修改点：合并红晶奖励 ==================
+          let redcrystalAdd = 0;
+          // 辛迪加海盗基础奖励
+          if (initiatorCareer?.faction === '辛迪加海盗') {
+            redcrystalAdd += 1;
+          }
+          // 财务经理额外奖励
+          redcrystalAdd += extraRedCrystal;
+
+          // 如果有红晶奖励
+          if (redcrystalAdd > 0) {
+            await ctx.database.upsert('ggcevo_sign', [{
+              handle: initiatorHandle,
+              redcrystal: (initiatorCareer?.redcrystal || 0) + redcrystalAdd,
+              faction: initiatorCareer?.faction || '',
+              career: initiatorCareer?.career || '',
+              syndicateCareer: initiatorCareer?.syndicateCareer || ''
+            }], ['handle']);
+          }
+
+
+
+          // ================== 修正的金币转移逻辑 ==================
+          if (computerExpertProtection) {
+            // 计算机专家保护生效时，双方金币都不变动
+            // 不触发气喇叭效果
+          } else {
+            // 常规金币转移逻辑
+            if (isWin) {
+              await ctx.database.set('ggcevo_sign', targetHandle, {
+                totalRewards: targetGold - goldTransfer
+              });
+              await ctx.database.set('ggcevo_sign', initiatorHandle, {
+                totalRewards: initiatorGold + goldTransfer
+              });
+            } else {
+              await ctx.database.set('ggcevo_sign', initiatorHandle, {
+                totalRewards: initiatorGold - goldTransfer
+              });
+              await ctx.database.set('ggcevo_sign', targetHandle, {
+                totalRewards: targetGold + goldTransfer
+              });
+            }
+            
+            // 气喇叭生效时，额外白送金币（不是从失败者掠夺）
+            if (hornEffect) {
+              await ctx.database.set('ggcevo_sign', winnerHandle, {
+                totalRewards: (isWin ? initiatorGold + goldTransfer : targetGold + goldTransfer) + extraGold
+              });
+            }
           }
 
         });
@@ -2188,6 +2237,7 @@ export function apply(ctx: Context, config: Config) {
   ctx.command('ggcevo/pk榜 [page]', '查看玩家PK排行榜')
     .usage("输入 pk榜 [页码] 查看对应页的排行榜，每页10条")
     .action(async ({ session }, page) => {
+      if (!config.enableRankingCommands) return '该指令当前未启用，请联系管理员开启。';
 
       const [profile] = await ctx.database.get('sc2arcade_player', { userId: session.userId })
       if (!profile) return '🔒 需要先绑定游戏句柄。';
@@ -2242,6 +2292,7 @@ export function apply(ctx: Context, config: Config) {
   ctx.command('ggcevo/武器库 [category]')
     .usage('输入"武器库"查看类型，或"武器库 类型"查看详细武器信息')
     .action(async ({ session }, category) => {
+      if (!config.enableWeaponCommands) return '该指令当前未启用，请联系管理员开启。';
 
       const Curfew = fixedCurfewCheck(session, config)
       if (!Curfew) return '⛔ 宵禁时段 (18:00-24:00) 禁止在群聊中使用咕咕之战指令。\n请添加C.O.R.E为好友使用私聊指令，好友验证信息为【咕咕之战】。'
@@ -2445,6 +2496,7 @@ export function apply(ctx: Context, config: Config) {
   ctx.command('ggcevo/爆破库 [type]')
     .usage('输入"爆破库"查看分类，或"爆破库 类型"查看详细物品')
     .action(async ({ session }, type) => {
+      if (!config.enableWeaponCommands) return '该指令当前未启用，请联系管理员开启。';
 
       const Curfew = fixedCurfewCheck(session, config)
       if (!Curfew) return '⛔ 宵禁时段 (18:00-24:00) 禁止在群聊中使用咕咕之战指令。\n请添加C.O.R.E为好友使用私聊指令，好友验证信息为【咕咕之战】。'
@@ -2515,6 +2567,7 @@ export function apply(ctx: Context, config: Config) {
 
   ctx.command('ggcevo/购买 <item>')
     .action(async ({ session }, item) => {
+      if (!config.enableWeaponCommands) return '该指令当前未启用，请联系管理员开启。';
 
       const Curfew = fixedCurfewCheck(session, config)
       if (!Curfew) return '⛔ 宵禁时段 (18:00-24:00) 禁止在群聊中使用咕咕之战指令。\n请添加C.O.R.E为好友使用私聊指令，好友验证信息为【咕咕之战】。'
@@ -2733,6 +2786,7 @@ export function apply(ctx: Context, config: Config) {
   // 装备系统
   ctx.command('ggcevo/武器仓库')
     .action(async ({ session }) => {
+      if (!config.enableWeaponCommands) return '该指令当前未启用，请联系管理员开启。';
 
       const Curfew = fixedCurfewCheck(session, config)
       if (!Curfew) return '⛔ 宵禁时段 (18:00-24:00) 禁止在群聊中使用咕咕之战指令。\n请添加C.O.R.E为好友使用私聊指令，好友验证信息为【咕咕之战】。'
@@ -2799,6 +2853,7 @@ export function apply(ctx: Context, config: Config) {
   ctx.command('ggcevo/装备武器 <weapon>')
     .alias('装备')
     .action(async ({ session }, weapon) => {
+      if (!config.enableWeaponCommands) return '该指令当前未启用，请联系管理员开启。';
 
       const Curfew = fixedCurfewCheck(session, config)
       if (!Curfew) return '⛔ 宵禁时段 (18:00-24:00) 禁止在群聊中使用咕咕之战指令。\n请添加C.O.R.E为好友使用私聊指令，好友验证信息为【咕咕之战】。'
@@ -2849,6 +2904,7 @@ export function apply(ctx: Context, config: Config) {
   // 科技升级指令
   ctx.command('ggcevo/升级科技 <target>', '升级空间站科技')
     .action(async ({ session }, target) => {
+      if (!config.enableBossCommands) return '该指令当前未启用，请联系管理员开启。';
 
       const Curfew = fixedCurfewCheck(session, config)
       if (!Curfew) return '⛔ 宵禁时段 (18:00-24:00) 禁止在群聊中使用咕咕之战指令。\n请添加C.O.R.E为好友使用私聊指令，好友验证信息为【咕咕之战】。'
@@ -2885,6 +2941,7 @@ export function apply(ctx: Context, config: Config) {
   ctx.command('ggcevo/升级武器 <target>', '升级武器')
     .alias('升级')
     .action(async ({ session }, target) => {
+      if (!config.enableWeaponCommands) return '该指令当前未启用，请联系管理员开启。';
 
       const Curfew = fixedCurfewCheck(session, config)
       if (!Curfew) return '⛔ 宵禁时段 (18:00-24:00) 禁止在群聊中使用咕咕之战指令。\n请添加C.O.R.E为好友使用私聊指令，好友验证信息为【咕咕之战】。'
@@ -2919,6 +2976,7 @@ export function apply(ctx: Context, config: Config) {
   ctx.command('ggcevo/改装武器 <weapon> [mod]', '安装武器模块')
     .alias('改装')
     .action(async ({ session }, weapon, mod) => {
+      if (!config.enableWeaponCommands) return '该指令当前未启用，请联系管理员开启。';
 
       const Curfew = fixedCurfewCheck(session, config)
       if (!Curfew) return '⛔ 宵禁时段 (18:00-24:00) 禁止在群聊中使用咕咕之战指令。\n请添加C.O.R.E为好友使用私聊指令，好友验证信息为【咕咕之战】。'
@@ -3134,6 +3192,7 @@ export function apply(ctx: Context, config: Config) {
 
   ctx.command('ggcevo/拆卸 <weapon> <mod>', '卸载武器模块，专属模块返还50%金币，通用模块返还80%金币')
     .action(async ({ session }, weapon, mod) => {
+      if (!config.enableWeaponCommands) return '该指令当前未启用，请联系管理员开启。';
 
       const Curfew = fixedCurfewCheck(session, config)
       if (!Curfew) return '⛔ 宵禁时段 (18:00-24:00) 禁止在群聊中使用咕咕之战指令。\n请添加C.O.R.E为好友使用私聊指令，好友验证信息为【咕咕之战】。'
@@ -3231,6 +3290,7 @@ export function apply(ctx: Context, config: Config) {
   ctx.command('ggcevo/攻击 <bossName>')
     .usage('请输入要攻击的异形名称(例如：攻击 异齿猛兽 或 攻击 寒冰王蛇)')
     .action(async (argv, bossName) => {
+      if (!config.enableBossCommands) return '该指令当前未启用，请联系管理员开启。';
       const session = argv.session;
       let bossEventBroadcast: string[] | string = null;
 
@@ -3449,6 +3509,7 @@ export function apply(ctx: Context, config: Config) {
     // 新增燃烧层数选项
     .option('burn', '-b <burn:number> 燃烧层数')
     .action(async (argv, name) => {
+      if (!config.enableBossCommands) return '该指令当前未启用，请联系管理员开启。';
       const session = argv.session;
       const { options } = argv;
 
@@ -3606,6 +3667,7 @@ export function apply(ctx: Context, config: Config) {
   ctx.command('ggcevo/伤害榜 [page]', '查看当前主宰伤害排名')
     .usage("输入 伤害榜 [页码] 查看对应页的排行榜，每页10条")
     .action(async (_, page) => {
+      if (!config.enableRankingCommands) return '该指令当前未启用，请联系管理员开启。';
       const pageNum = parseInt(page) || 1;
       if (pageNum < 1) return '请输入有效的页码。';
 
@@ -3651,6 +3713,7 @@ export function apply(ctx: Context, config: Config) {
   ctx.command('ggcevo/异形信息', '查看当前主宰信息')
     .alias('yx信息')
     .action(async ({ session }) => {
+      if (!config.enableBossCommands) return '该指令当前未启用，请联系管理员开启。';
 
       const Curfew = fixedCurfewCheck(session, config)
       if (!Curfew) return '⛔ 宵禁时段 (18:00-24:00) 禁止在群聊中使用咕咕之战指令。\n请添加C.O.R.E为好友使用私聊指令，好友验证信息为【咕咕之战】。'
@@ -3885,6 +3948,7 @@ export function apply(ctx: Context, config: Config) {
 
   ctx.command('ggcevo/祈愿')
     .action(async (argv) => {
+      if (!config.enableOtherCommands) return '该指令当前未启用，请联系管理员开启。';
       const session = argv.session;
 
       const Curfew = fixedCurfewCheck(session, config)
@@ -4019,6 +4083,7 @@ export function apply(ctx: Context, config: Config) {
   ctx.command('ggcevo/加入 <faction>', '加入阵营')
     .alias('加入阵营')
     .action(async ({ session }, faction) => {
+      if (!config.enableFactionCommands) return '该指令当前未启用，请联系管理员开启。';
 
       const Curfew = fixedCurfewCheck(session, config)
       if (!Curfew) return '⛔ 宵禁时段 (18:00-24:00) 禁止在群聊中使用咕咕之战指令。\n请添加C.O.R.E为好友使用私聊指令，好友验证信息为【咕咕之战】。'
@@ -4114,6 +4179,7 @@ export function apply(ctx: Context, config: Config) {
   ctx.command('ggcevo/退出', '退出当前阵营')
     .alias('退出阵营')
     .action(async ({ session }) => {
+      if (!config.enableFactionCommands) return '该指令当前未启用，请联系管理员开启。';
 
       const Curfew = fixedCurfewCheck(session, config)
       if (!Curfew) return '⛔ 宵禁时段 (18:00-24:00) 禁止在群聊中使用咕咕之战指令。\n请添加C.O.R.E为好友使用私聊指令，好友验证信息为【咕咕之战】。'
@@ -4183,8 +4249,30 @@ export function apply(ctx: Context, config: Config) {
       }
     });
 
-  ctx.command('ggcevo/职业 [type]', '职业查询')
-    .action(async ({ session }, type) => {
+  ctx.command('ggcevo/转职 [profession]', '转职系统')
+    .action(async ({ session }, profession) => {
+
+      const Curfew = fixedCurfewCheck(session, config)
+      if (!Curfew) return '⛔ 宵禁时段 (18:00-24:00) 禁止在群聊中使用咕咕之战指令。\n请添加C.O.R.E为好友使用私聊指令，好友验证信息为【咕咕之战】。'
+
+      // 获取用户绑定信息
+      const [profile] = await ctx.database.get('sc2arcade_player', { userId: session.userId, isActive: true });
+      if (!profile) return '🔒 需要先绑定游戏句柄。';
+
+      // 构建唯一句柄
+      const handle = `${profile.regionId}-S2-${profile.realmId}-${profile.profileId}`;
+
+      // 获取当前阵营信息
+      const [careerData] = await ctx.database.get('ggcevo_sign', { handle });
+      if (!careerData) return '请先加入阵营后使用转职功能。';
+
+      // 检查当前职业是否在配置中
+      const allProfessions = [...spaceStationCrewConfig, ...syndicatePirateConfig];
+      const currentCareer = careerData.career;
+      const currentSyndicateCareer = careerData.syndicateCareer;
+      const isCurrentCareerValid = allProfessions.some(p => p.professionName === currentCareer);
+      const isCurrentSyndicateCareerValid = allProfessions.some(p => p.professionName === currentSyndicateCareer);
+
       // 无参数时显示一级分类
       if (!type) {
         return [
@@ -4293,15 +4381,23 @@ export function apply(ctx: Context, config: Config) {
         return '您已经是该职业了。';
       }
 
+      // 判断是否为首次转职（当前职业不在配置中或为null）
+      const isFirstTransfer = (!isCurrentCareerValid && !currentCareer) || 
+                             (!isCurrentSyndicateCareerValid && !currentSyndicateCareer);
+
       // 人类转职逻辑：必须加入人类联盟或辛迪加海盗阵营
       if (humanProfession) {
         if (careerData.faction !== '人类联盟' && careerData.faction !== '辛迪加海盗') {
           return '只有已加入阵营的玩家才能进行人类转职。';
         }
-
-        // 检查是否已经有人类职业（一旦转职后无法更改）
-        if (isCurrentCareerValid) {
-          return `您已经转职为【${currentCareer}】，人类职业一旦转职后无法更改。`;
+        
+        // 非首次人类转职需要转职券
+        if (!isFirstTransfer && careerData.career) {
+          const [backpack] = await ctx.database.get('ggcevo_backpack', { handle, itemId: 7 });
+          if (!backpack || backpack.quantity < 1) {
+            return '后续人类转职需要转职券，您没有足够的转职券。';
+          }
+          await ctx.database.set('ggcevo_backpack', { handle, itemId: 7 }, { quantity: backpack.quantity - 1 });
         }
       }
 
@@ -4310,10 +4406,14 @@ export function apply(ctx: Context, config: Config) {
         if (careerData.faction !== '辛迪加海盗') {
           return '只有辛迪加海盗可以转职为该职业。';
         }
-
-        // 检查是否已经有辛迪加职业（一旦转职后无法更改）
-        if (isCurrentSyndicateCareerValid) {
-          return `您已经转职为【${currentSyndicateCareer}】，辛迪加职业一旦转职后无法更改。`;
+        
+        // 非首次辛迪加转职需要转职券
+        if (!isFirstTransfer && careerData.syndicateCareer) {
+          const [backpack] = await ctx.database.get('ggcevo_backpack', { handle, itemId: 7 });
+          if (!backpack || backpack.quantity < 1) {
+            return '后续辛迪加转职需要转职券，您没有足够的转职券。';
+          }
+          await ctx.database.set('ggcevo_backpack', { handle, itemId: 7 }, { quantity: backpack.quantity - 1 });
         }
       }
 
@@ -4359,6 +4459,7 @@ export function apply(ctx: Context, config: Config) {
 
   ctx.command('ggcevo/职业信息', '查看当前阵营与职业状态')
     .action(async ({ session }) => {
+      if (!config.enableFactionCommands) return '该指令当前未启用，请联系管理员开启。';
       try {
 
         const Curfew = fixedCurfewCheck(session, config)
@@ -4466,6 +4567,7 @@ export function apply(ctx: Context, config: Config) {
   ctx.command('ggcevo/黑市 [category]', '辛迪加海盗专属黑市')
     .usage('输入"黑市"查看分类，或"黑市 分类名称"查看详细')
     .action(async ({ session }, category) => {
+      if (!config.enableFactionCommands) return '该指令当前未启用，请联系管理员开启。';
 
       const Curfew = fixedCurfewCheck(session, config)
       if (!Curfew) return '⛔ 宵禁时段 (18:00-24:00) 禁止在群聊中使用咕咕之战指令。\n请添加C.O.R.E为好友使用私聊指令，好友验证信息为【咕咕之战】。'
@@ -4665,6 +4767,7 @@ export function apply(ctx: Context, config: Config) {
 
   ctx.command('ggcevo/订购 <item>')
     .action(async ({ session }, item) => {
+      if (!config.enableFactionCommands) return '该指令当前未启用，请联系管理员开启。';
 
       const Curfew = fixedCurfewCheck(session, config)
       if (!Curfew) return '⛔ 宵禁时段 (18:00-24:00) 禁止在群聊中使用咕咕之战指令。\n请添加C.O.R.E为好友使用私聊指令，好友验证信息为【咕咕之战】。'
@@ -4843,6 +4946,7 @@ export function apply(ctx: Context, config: Config) {
 
   ctx.command('ggcevo/使用 [itemName] [target]')
     .action(async (argv, itemName, target) => {
+      if (!config.enableOtherCommands) return '该指令当前未启用，请联系管理员开启。';
       const session = argv.session
 
       const Curfew = fixedCurfewCheck(session, config)
@@ -4909,6 +5013,7 @@ export function apply(ctx: Context, config: Config) {
   ctx.command('ggcevo/科技 [techName]', '查看空间站科技信息')
     .usage('输入"科技"查看列表，或"科技 科技名称"查看详细信息')
     .action(async ({ session }, techName) => {
+      if (!config.enableBossCommands) return '该指令当前未启用，请联系管理员开启。';
 
       const Curfew = fixedCurfewCheck(session, config)
       if (!Curfew) return '⛔ 宵禁时段 (18:00-24:00) 禁止在群聊中使用咕咕之战指令。\n请添加C.O.R.E为好友使用私聊指令，好友验证信息为【咕咕之战】。'
@@ -4997,6 +5102,7 @@ export function apply(ctx: Context, config: Config) {
 
   ctx.command('ggcevo/挖矿')
     .action(async ({ session }) => {
+      if (!config.enableOtherCommands) return '该指令当前未启用，请联系管理员开启。';
 
       const Curfew = fixedCurfewCheck(session, config)
       if (!Curfew) return '⛔ 宵禁时段 (18:00-24:00) 禁止在群聊中使用咕咕之战指令。\n请添加C.O.R.E为好友使用私聊指令，好友验证信息为【咕咕之战】。'
@@ -5228,6 +5334,7 @@ export function apply(ctx: Context, config: Config) {
   ctx.command('ggcevo/任务 [name]')
     .usage('输入"任务"查看所有任务列表，或"任务 任务名称"查看详细任务信息')
     .action(async ({ session }, name) => {
+      if (!config.enableOtherCommands) return '该指令当前未启用，请联系管理员开启。';
 
       const Curfew = fixedCurfewCheck(session, config)
       if (!Curfew) return '⛔ 宵禁时段 (18:00-24:00) 禁止在群聊中使用咕咕之战指令。\n请添加C.O.R.E为好友使用私聊指令，好友验证信息为【咕咕之战】。'
@@ -5308,6 +5415,7 @@ export function apply(ctx: Context, config: Config) {
   ctx.command('ggcevo/完成任务 <name:text>', '完成指定任务领取奖励')
     .usage('输入"完成任务 任务名称"来完成任务并领取奖励')
     .action(async ({ session }, name) => {
+      if (!config.enableOtherCommands) return '该指令当前未启用，请联系管理员开启。';
       try {
 
         const Curfew = fixedCurfewCheck(session, config)
@@ -5471,6 +5579,7 @@ export function apply(ctx: Context, config: Config) {
   ctx.command('ggcevo/技能 [异形名称]')
     .usage('查询异形技能，输入"技能"查看所有异形，输入"技能 异形名称"查询详细技能')
     .action(async ({ session }, unitName) => {
+      if (!config.enableBossCommands) return '该指令当前未启用，请联系管理员开启。';
 
       const Curfew = fixedCurfewCheck(session, config)
       if (!Curfew) return '⛔ 宵禁时段 (18:00-24:00) 禁止在群聊中使用咕咕之战指令。\n请添加C.O.R.E为好友使用私聊指令，好友验证信息为【咕咕之战】。'
@@ -5618,6 +5727,7 @@ export function apply(ctx: Context, config: Config) {
   // 咕咕更新指令实现
   ctx.command('ggcevo/咕咕更新')
     .action(async ({ session }) => {
+      if (!config.enableOtherCommands) return '该指令当前未启用，请联系管理员开启。';
       try {
 
         const Curfew = fixedCurfewCheck(session, config)
@@ -5664,6 +5774,7 @@ export function apply(ctx: Context, config: Config) {
 
   ctx.command('ggcevo/探索 [galaxyName]')
     .action(async ({ session }, galaxyName) => {
+      if (!config.enableOtherCommands) return '该指令当前未启用，请联系管理员开启。';
 
       // 宵禁检查
       const Curfew = fixedCurfewCheck(session, config)
@@ -6170,6 +6281,7 @@ export function apply(ctx: Context, config: Config) {
   ctx.command('ggcevo/购买飞船 [shipName]')
     .alias('飞船')
     .action(async ({ session }, shipName) => {
+      if (!config.enableOtherCommands) return '该指令当前未启用，请联系管理员开启。';
 
       const Curfew = fixedCurfewCheck(session, config)
       if (!Curfew) return '⛔ 宵禁时段 (18:00-24:00) 禁止在群聊中使用咕咕之战指令。\n请添加C.O.R.E为好友使用私聊指令，好友验证信息为【咕咕之战】。'
@@ -6283,6 +6395,7 @@ export function apply(ctx: Context, config: Config) {
   ctx.command('ggcevo/兑换资源 [name] [amount]')
     .usage('输入"兑换资源"查看可兑换物品列表\n输入"兑换资源 物品名称 [数量]"进行兑换')
     .action(async ({ session }, name, amount) => {
+      if (!config.enablePKCommands) return '该指令当前未启用，请联系管理员开启。';
 
       const Curfew = fixedCurfewCheck(session, config)
       if (!Curfew) return '⛔ 宵禁时段 (18:00-24:00) 禁止在群聊中使用咕咕之战指令。\n请添加C.O.R.E为好友使用私聊指令，好友验证信息为【咕咕之战】。'
@@ -6485,6 +6598,7 @@ export function apply(ctx: Context, config: Config) {
   ctx.command('ggcevo/异形刷新权重', '查询当前主宰刷新权重')
     .alias('yx刷新权重')
     .action(async ({ session }) => {
+      if (!config.enableBossCommands) return '该指令当前未启用，请联系管理员开启。';
       try {
 
         const Curfew = fixedCurfewCheck(session, config)
@@ -6549,6 +6663,176 @@ export function apply(ctx: Context, config: Config) {
         return '查询BOSS权重时发生错误，请检查服务器日志';
       }
     });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ctx.command('ggcevo/签到奖励')
+    .action(({ }) => {
+      return `
+签到金币奖励：
+每天获得50-100金币
+--------------
+签到红晶奖励(辛迪加财务经理职业加成)：
+每天签到获得5枚红晶
+`.trim()
+    })
+
+  ctx.command('ggcevo/pk规则')
+    .action(({ }) => {
+      return `
+⚔️【全新PK规则】⚔️  
+1️⃣ 阵营限制  
+仅限「人类联盟」与「辛迪加海盗」成员参与PK  
+未加入阵营玩家请使用「加入」指令选择阵营  
+      
+2️⃣ 人类联盟保护机制  
+新成员享有30天保护期（从加入阵营日起算）
+保护期内不可被挑战  
+首次主动发起PK即视为放弃保护期（永久开启PK功能）  
+      
+3️⃣ 战斗惩罚调整  
+人类联盟被动应战的PK战败 ➜ 仅损失1%金币
+辛迪加海盗PK战败 ➜ 随机1%-5%损失金币  
+      
+4️⃣ 每日限制  
+主动发起PK次数：3次/日  
+PK同玩家限战：1次/日  
+被PK次数上限：5次/日  
+      
+🔥【战力系统升级】🔥  
+1️⃣ 战力组成  
+武器加成 + 职业加成 
+      
+2️⃣ 武器加成
+每拥有一把武器 ➜ + 基础伤害 x 100
+      
+每一把武器强化等级带来指数级战力增长：
+等级1 ➜ +1000  
+等级2 ➜ +3000 
+等级3 ➜ +6000 
+等级4 ➜ +10000  
+等级5 ➜ +15000  
+等级6 ➜ +21000 
+      
+每改装一个通用模块 ➜ +2000
+每改装一个专属模块 ➜ +4000
+      
+3️⃣ 职业加成
+联盟新兵：+1000  
+深空矿工，医疗专家，情报副官，总工程师，舰长，机械化专家：+2500
+警卫员下士，警卫长，武器中士：+3500
+辛迪加炮灰新兵：+2000
+清洁工，辛迪加财务经理，计算机专家，指挥官，装甲兵，破坏者，征募官：+3000 
+能量武器专家，枪手，猩红杀手，纵火狂：+4000
+`.trim()
+    })
+
+  ctx.command('ggcevo/击败奖励')
+    .alias('击杀奖励')
+    .action(({ }) => {
+      return `
+🌟 异形主宰击败奖励规则 🌟
+🏆 伤害榜奖励（按伤害排名）：
+1️⃣ 第1名: 
+   35 资源兑换券
+2️⃣ 第2名: 
+   30 资源兑换券
+3️⃣ 第3名: 
+   25 资源兑换券
+🏅 第4-10名: 
+   20 资源兑换券
+🎖 第11-20名: 
+   15 资源兑换券
+💫 第21-50名: 
+   10 资源兑换券
+💝 其他参与者:
+   5 资源兑换券
+           
+🌈 精灵双倍祈愿生效期间，获得双倍的资源兑换券
+         
+💡 特殊说明：
+1. 奖励自动发放到账户，无需手动领取
+2. 精灵双倍祈愿可通过"祈愿"指令概率获得
+3. 排名根据实际造成伤害计算
+`.trim()
+    })
+
+  ctx.command('ggcevo/祈愿系统')
+    .action(({ }) => {
+      return `
+🎋 祈愿系统
+祈愿是连接星界的神秘仪式，消耗50金币可换取随机祈愿效果！通过智慧与运气的交织，助你在咕咕之战路上突破瓶颈。效果持续7天​​ ，冷却期间无法再次祈愿。
+      
+🍀 ​​普通祈愿池（95%概率）​​
+🦗 ​​蚱蜢优购​​：下一次购买武器(非传奇)享有20%的折扣
+🦊 ​​灵狐升运​​：下一次升级武器享有20%的折扣
+👑 ​​王权增幅​​：攻击伤害提高5%
+🍊 ​​金柚赐福​​：立即获得3张资源兑换券
+🪙 ​​夜市赠礼​​：立即获得5枚咕咕币
+      
+🔮 ​​稀有祈愿池（5%概率）​​
+🗡️ ​​悲鸣之锋​​：攻击伤害提高10%，武器每等级提高5%伤害
+🧚 ​​精灵双倍​​：下一次击败主宰时可获得双倍的资源兑换券
+🐾 ​​喵喵财源​​：签到获得双倍的金币和咕咕币
+🎵 ​​暴击韵律​​：攻击暴击率提高20%
+⚠️ ​​酥手空空​​：立即失去50枚金币（可触发彩蛋）
+`.trim()
+    })
+
+  ctx.command('ggcevo/赛季奖励')
+    .alias('排名奖励')
+    .action(({ }) => {
+      return `
+🏆 赛季排名奖励规则：
+🥇 第1名：
+   100 咕咕币 + 🥇 赛季冠军勋章
+🥈 第2名：
+   90 咕咕币 + 🥈 赛季亚军勋章
+🥉 第3名：
+   80 咕咕币 + 🥉 赛季季军勋章
+🏅 第4-10名：
+   60 咕咕币 + 🏅 赛季前十勋章
+🎖 第11-20名：
+   40 咕咕币 + 🎖 赛季前二十勋章
+💝 参与奖励：
+▸ 所有积分 > 0 玩家：20 咕咕币
+▸ 所有积分 ≤ 0 玩家：10 咕咕币
+      
+📦 勋章系统：
+● 每个勋章对应专属成就
+● 可永久保存在背包中
+● 动态赛季名称显示（如：🥇S1赛季冠军勋章）
+      
+📌 重要说明：
+1. 结算后自动发放所有奖励
+2. 勋章可通过背包查看
+3. 每个赛季持续2个月，可通过"胜点榜"指令查看
+`.trim()
+    })
 
   // 添加定时任务，每半小时触发一次
   ctx.setInterval(async () => {
