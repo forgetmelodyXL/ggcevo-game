@@ -18,7 +18,7 @@
   ],
   "peerDependencies": {
     "koishi": "^4.18.7",
-    "koishi-plugin-ggcevo-sign": "^1.0.13"
+    "koishi-plugin-ggcevo-sign": "^1.1.0"
   },
   "koishi": {
     "service": {
